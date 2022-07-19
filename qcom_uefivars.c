@@ -116,12 +116,13 @@ static int __qseos_syscall(const struct qcom_scm_desc *desc, struct qseos_res *r
 	int status;
 
 	status = qcom_scm_call(desc, &scm_res);
-	if (status)
-		return status;
 
 	res->status = scm_res.result[0];
 	res->resp_type = scm_res.result[1];
 	res->data = scm_res.result[2];
+
+	if (status)
+		return status;
 
 	return 0;
 }
@@ -131,14 +132,15 @@ static int qseos_syscall(struct device *dev, const struct qcom_scm_desc *desc, s
 	int status;
 
 	status = __qseos_syscall(desc, res);
+
+	dev_info(dev, "%s: owner=%x, svc=%x, cmd=%x, status=%lld, type=%llx, data=%llx",
+		 __func__, desc->owner, desc->svc, desc->cmd, res->status,
+		 res->resp_type, res->data);
+
 	if (status) {
 		dev_err(dev, "qcom_scm_call failed with errro %d\n", status);
 		return status;
 	}
-
-	dev_info(dev, "%s: owner=%x, svc=%x, cmd=%x, status=%llx, type=%llx, data=%llx",
-		 __func__, desc->owner, desc->svc, desc->cmd, res->status,
-		 res->resp_type, res->data);
 
 	// TODO: handle incomplete calls
 
