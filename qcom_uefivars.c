@@ -227,7 +227,6 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 	struct qseos_dma dma_rsp;
 	u64 size = PAGE_SIZE;
 	int status;
-	char name_u8[256] = {};
 
 	// size = (size + PAGE_SIZE) & PAGE_MASK;
 	status = qseos_dma_alloc(dev, &dma_base, size, GFP_KERNEL);
@@ -265,12 +264,6 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 			*name_size = rsp_data->name_size;
 			name[*name_size - 1] = 0;
 		}
-
-		utf16s_to_utf8s(name, *name_size, UTF16_LITTLE_ENDIAN, name_u8, ARRAY_SIZE(name_u8) - 1);
-
-		dev_info(dev, "%s: rsp.cmd=0x%x, rsp.status=0x%x, rsp.len=%u, name=%s, guid=%pUL\n",
-			 __func__, rsp_data->command_id, rsp_data->status, rsp_data->length,
-			 name_u8, guid);
 	}
 
 	qseos_dma_free(dev, &dma_base);
@@ -287,6 +280,7 @@ static int qcom_uefivars_probe(struct platform_device *pdev)
 	u32 app_id = U32_MAX;
 	guid_t var_guid = {};
 	wchar_t var_name[256] = {};
+	char var_name_u8[256] = {};
 	u64 var_size = ARRAY_SIZE(var_name) * sizeof(var_name[0]);
 	int status;
 
@@ -305,6 +299,9 @@ static int qcom_uefivars_probe(struct platform_device *pdev)
 						   var_name, &var_guid);
 	if (status)
 		return status;
+	
+	utf16s_to_utf8s(var_name, var_size, UTF16_LITTLE_ENDIAN, var_name_u8, ARRAY_SIZE(var_name_u8) - 1);
+	dev_info(&pdev->dev, "%s: name=%s, guid=%pUL\n", __func__, var_name_u8, &var_guid);
 
 	return 0;
 }
