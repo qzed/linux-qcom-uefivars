@@ -234,7 +234,7 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 	if (status)
 		return status;
 
-	qseos_dma_aligned(&dma_base, &dma_req, 0, sizeof(u32));
+	qseos_dma_aligned(&dma_base, &dma_req, 0, __alignof__(*req_data));
 
 	req_data = dma_req.virt;
 	req_data->command_id = TZ_UEFI_VAR_GET_NEXT_VARIABLE;
@@ -250,7 +250,7 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 	memcpy(dma_req.virt + req_data->name_offset, name, utf16_strnlen(name, *name_size));
 	*(wchar_t *)(dma_req.virt + req_data->name_offset + utf16_strnlen(name, *name_size)) = 0;
 
-	qseos_dma_aligned(&dma_base, &dma_rsp, req_data->length, sizeof(u32));
+	qseos_dma_aligned(&dma_base, &dma_rsp, req_data->length, __alignof__(*rsp_data));
 
 	dma_wmb();
 	status = qseos_app_send(dev, app_id, dma_req.phys, dma_req.size, dma_rsp.phys, dma_rsp.size);
