@@ -172,7 +172,9 @@ static u64 utf16_strnlen(wchar_t* str, u64 max)
 {
 	u64 i;
 
-	for(i = 0; *str != 0 && i < max; i++, str++) {}
+	for (i = 0; *str != 0 && i < max; i++, str++) {
+		/* Do nothing, all is handled in the for statement. */
+	}
 
 	return i;
 }
