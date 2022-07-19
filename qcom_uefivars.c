@@ -230,6 +230,50 @@ static int qseos_app_send(struct device *dev, u32 app_id, dma_addr_t req,
 	return 0;
 }
 
+static efi_status_t qseos_uefi_status_to_efi(u32 status)
+{
+	u64 category = status & 0xf0000000;
+	u64 code = status & 0x0fffffff;
+
+	return category << (BITS_PER_LONG - 32) | code;
+}
+
+int __efi_status_to_err(efi_status_t status)
+{
+	int err;
+
+	switch (status) {
+	case EFI_SUCCESS:
+		err = 0;
+		break;
+	case EFI_INVALID_PARAMETER:
+		err = -EINVAL;
+		break;
+	case EFI_OUT_OF_RESOURCES:
+		err = -ENOSPC;
+		break;
+	case EFI_DEVICE_ERROR:
+		err = -EIO;
+		break;
+	case EFI_WRITE_PROTECTED:
+		err = -EROFS;
+		break;
+	case EFI_SECURITY_VIOLATION:
+		err = -EACCES;
+		break;
+	case EFI_NOT_FOUND:
+		err = -ENOENT;
+		break;
+	case EFI_ABORTED:
+		err = -EINTR;
+		break;
+	default:
+		err = -EINVAL;
+	}
+
+	return err;
+}
+
 static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 					     u64 *name_size, wchar_t* name, efi_guid_t* guid)
 {
@@ -279,7 +323,7 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 		goto out;
 
 	if (rsp_data->status) {
-		status = -EINVAL;
+		status = __efi_status_to_err(qseos_uefi_status_to_efi(rsp_data->status));
 		goto out;
 	}
 
