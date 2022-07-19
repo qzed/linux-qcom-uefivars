@@ -220,7 +220,7 @@ struct qcom_uefi_get_next_variable_name_req {
 	u32 guid_offset;
 	u32 guid_size;
 	u32 name_offset;
-	u32 name_size;
+	u32 name_size;		/* Size of full buffer in bytes with nul-terminator. */
 } __packed;
 
 struct qcom_uefi_get_next_variable_name_rsp {
@@ -230,7 +230,7 @@ struct qcom_uefi_get_next_variable_name_rsp {
 	u32 guid_offset;
 	u32 guid_size;
 	u32 name_offset;
-	u32 name_size;
+	u32 name_size;		/* Size in bytes with nul-terminator. */
 } __packed;
 
 static efi_status_t qseos_uefi_status_to_efi(u32 status)
@@ -241,6 +241,7 @@ static efi_status_t qseos_uefi_status_to_efi(u32 status)
 	return category << (BITS_PER_LONG - 32) | code;
 }
 
+// NOTE: copied from kernel, not required in final driver
 int __efi_status_to_err(efi_status_t status)
 {
 	int err;
@@ -300,9 +301,11 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 	if (status)
 		return status;
 
+	/* Align request struct. */
 	qseos_dma_aligned(&dma_base, &dma_req, 0, __alignof__(*req_data));
 	req_data = dma_req.virt;
 
+	/* Set up request data. */
 	req_data->command_id = TZ_UEFI_VAR_GET_NEXT_VARIABLE;
 	req_data->guid_offset = ALIGN(sizeof(*req_data), __alignof__(*guid));
 	req_data->guid_size = sizeof(*guid);
@@ -312,16 +315,20 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 
 	dma_req.size = req_data->length;
 
+	/* Copy request parameters. */
 	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
 	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, *name_size / sizeof(wchar_t));
 
+	/* Align response struct. */
 	qseos_dma_aligned(&dma_base, &dma_rsp, req_data->length, __alignof__(*rsp_data));
 	rsp_data = dma_rsp.virt;
 
+	/* Perform SCM call. */
 	dma_wmb();
 	status = qseos_app_send(dev, app_id, dma_req.phys, dma_req.size, dma_rsp.phys, dma_rsp.size);
 	dma_rmb();
 
+	/* Check for errors and validate. */
 	if (status)
 		goto out;
 
@@ -340,6 +347,7 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 		goto out;
 	}
 
+	/* Copy response fields. */
 	memcpy(guid, dma_rsp.virt + rsp_data->guid_offset, rsp_data->guid_size);
 	utf16_strlcpy(name, dma_rsp.virt + rsp_data->name_offset, rsp_data->name_size / sizeof(wchar_t));
 	*name_size = rsp_data->name_size;
