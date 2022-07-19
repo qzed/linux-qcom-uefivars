@@ -179,34 +179,55 @@ static u64 utf16_strnlen(wchar_t* str, u64 max)
 	return i;
 }
 
+struct qseos_dma {
+	unsigned long size;
+	void *virt;
+	dma_addr_t phys;
+};
+
+static int qseos_dma_alloc(struct device *dev, struct qseos_dma *dma, u64 size, gfp_t gfp)
+{
+	dma->virt = dma_alloc_coherent(dev, size, &dma->phys, GFP_KERNEL);
+	if (!dma->virt)
+		return -ENOMEM;
+	
+	dma->size = size;
+	return 0;
+}
+
+static void qseos_dma_free(struct device *dev, struct qseos_dma *dma)
+{
+	dma_free_coherent(dev, dma->size, dma->virt, dma->phys);
+}
+
+static void qseos_dma_aligned(const struct qseos_dma *base, struct qseos_dma *out,
+			      u64 offset, u64 align)
+{
+	out->virt = (void *)ALIGN((uintptr_t)base->virt + offset, align);
+	out->phys = base->phys + (out->virt - base->virt);
+	out->size = base->size - (out->virt - base->virt);
+}
+
 static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 					     u64 *name_size, wchar_t* name, guid_t* guid)
 {
 	struct qcom_uefi_get_next_variable_name_req *req_data;
 	struct qcom_uefi_get_next_variable_name_rsp *rsp_data;
+	struct qseos_dma dma_base;
+	struct qseos_dma dma_req;
+	struct qseos_dma dma_rsp;
 	u64 size = PAGE_SIZE;
-	dma_addr_t buf_phys;
-	dma_addr_t req_phys;
-	dma_addr_t rsp_phys;
-	void *buf_virt;
-	void *req_virt;
-	void *rsp_virt;
-	u64 req_len;
-	u64 rsp_len;
 	int status;
 	char name_u8[256] = {};
 
 	// size = (size + PAGE_SIZE) & PAGE_MASK;
-	buf_virt = dma_alloc_coherent(dev, size, &buf_phys, GFP_KERNEL);
-	if (!buf_virt) {
-		dev_err(dev, "%s: failed to allocate DMA memory\n", __func__);
-		return -ENOMEM;
-	}
+	status = qseos_dma_alloc(dev, &dma_base, size, GFP_KERNEL);
+	if (status)
+		return status;
 
-	req_virt = (void *)ALIGN((u64)buf_virt, 32);
-	req_phys = buf_phys + (req_virt - buf_virt);
-	req_data = req_virt;
+	qseos_dma_aligned(&dma_base, &dma_req, 0, sizeof(u32));
 
+	req_data = dma_req.virt;
 	req_data->command_id = TZ_UEFI_VAR_GET_NEXT_VARIABLE;
 	req_data->guid_offset = sizeof(*req_data);
 	req_data->guid_size = sizeof(*guid);
@@ -214,27 +235,24 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 	req_data->name_size = *name_size;
 	req_data->length = req_data->name_offset + req_data->name_size;
 
-	memcpy(req_virt + req_data->guid_offset, guid, req_data->guid_size);
-	memcpy(req_virt + req_data->name_offset, name, utf16_strnlen(name, *name_size));
-	*(wchar_t *)(req_virt + req_data->name_offset + utf16_strnlen(name, *name_size)) = 0;
+	dma_req.size = req_data->length;
 
-	rsp_virt = (void *)ALIGN((u64)buf_virt + req_data->length, 32);
-	rsp_phys = buf_phys + (rsp_virt - buf_virt);
-	rsp_data = rsp_virt;
+	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
+	memcpy(dma_req.virt + req_data->name_offset, name, utf16_strnlen(name, *name_size));
+	*(wchar_t *)(dma_req.virt + req_data->name_offset + utf16_strnlen(name, *name_size)) = 0;
 
-	req_len = req_data->length;
-	rsp_len = buf_virt + PAGE_SIZE - rsp_virt;
+	qseos_dma_aligned(&dma_base, &dma_rsp, req_data->length, sizeof(u32));
 
 	dma_wmb();
-
-	status = qseos_app_send(dev, app_id, req_phys, req_len, rsp_phys, rsp_len);
-
+	status = qseos_app_send(dev, app_id, dma_req.phys, dma_req.size, dma_rsp.phys, dma_rsp.size);
 	dma_rmb();
 
 	if (status == 0) {
+		rsp_data = dma_rsp.virt;
+
 		if (rsp_data->status == 0) {
-			memcpy(guid, rsp_virt + rsp_data->guid_offset, rsp_data->guid_size);
-			memcpy(name, rsp_virt + rsp_data->name_offset, min((u32)*name_size, rsp_data->name_size));
+			memcpy(guid, dma_rsp.virt + rsp_data->guid_offset, rsp_data->guid_size);
+			memcpy(name, dma_rsp.virt + rsp_data->name_offset, min((u32)*name_size, rsp_data->name_size));
 			*name_size = rsp_data->name_size;
 			name[*name_size - 1] = 0;
 		}
@@ -246,7 +264,7 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 			 name_u8, guid);
 	}
 
-	dma_free_coherent(dev, size, buf_virt, buf_phys);
+	qseos_dma_free(dev, &dma_base);
 
 	if (status)
 		return status;
