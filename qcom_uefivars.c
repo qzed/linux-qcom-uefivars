@@ -232,10 +232,12 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 	dma_rmb();
 
 	if (status == 0) {
-		memcpy(guid, rsp_virt + rsp_data->guid_offset, rsp_data->guid_size);
-		memcpy(name, rsp_virt + rsp_data->name_offset, min((u32)*name_size, rsp_data->name_size));
-		*name_size = rsp_data->name_size;
-		name[*name_size - 1] = 0;
+		if (rsp_data->status == 0) {
+			memcpy(guid, rsp_virt + rsp_data->guid_offset, rsp_data->guid_size);
+			memcpy(name, rsp_virt + rsp_data->name_offset, min((u32)*name_size, rsp_data->name_size));
+			*name_size = rsp_data->name_size;
+			name[*name_size - 1] = 0;
+		}
 
 		utf16s_to_utf8s(name, *name_size, UTF16_LITTLE_ENDIAN, name_u8, ARRAY_SIZE(name_u8) - 1);
 
