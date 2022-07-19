@@ -135,8 +135,6 @@ static int qseos_app_get_id(struct device *dev, const char* app_name, u32 *app_i
 		return -EINVAL;
 
 	*app_id = res.data;
-
-	dev_info(dev, "%s: name=%s, id=%u\n", __func__, app_name, *app_id);
 	return 0;
 }
 
