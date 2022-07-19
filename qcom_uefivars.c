@@ -1,4 +1,5 @@
 #include <linux/dma-mapping.h>
+#include <linux/efi.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
 #include <linux/module.h>
@@ -230,7 +231,7 @@ static int qseos_app_send(struct device *dev, u32 app_id, dma_addr_t req,
 }
 
 static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
-					     u64 *name_size, wchar_t* name, guid_t* guid)
+					     u64 *name_size, wchar_t* name, efi_guid_t* guid)
 {
 	struct qcom_uefi_get_next_variable_name_req *req_data;
 	struct qcom_uefi_get_next_variable_name_rsp *rsp_data;
@@ -241,9 +242,10 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 	int status;
 
 	/* Compute required size. */
-	size = sizeof(*req_data) + sizeof(*guid) + *name_size;    /* Inputs.     */
-	size += sizeof(*rsp_data) + sizeof(*guid) + *name_size;   /* Outputs.    */
-	size += __alignof__(*req_data) + __alignof__(*rsp_data);  /* Alignments. */
+	size = sizeof(*req_data) + sizeof(*guid) + *name_size;    /* Inputs.            */
+	size += sizeof(*rsp_data) + sizeof(*guid) + *name_size;   /* Outputs.           */
+	size += __alignof__(*req_data) + __alignof__(*guid);      /* Input alignments.  */
+	size += __alignof__(*rsp_data);      			  /* Output alignments. */
 	size = PAGE_ALIGN(size);
 
 	/* Allocate DMA memory. */
@@ -255,7 +257,7 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 	req_data = dma_req.virt;
 
 	req_data->command_id = TZ_UEFI_VAR_GET_NEXT_VARIABLE;
-	req_data->guid_offset = sizeof(*req_data);
+	req_data->guid_offset = ALIGN(sizeof(*req_data), __alignof__(*guid));
 	req_data->guid_size = sizeof(*guid);
 	req_data->name_offset = req_data->guid_offset + req_data->guid_size;
 	req_data->name_size = *name_size;
@@ -304,7 +306,7 @@ static int qcom_uefivars_probe(struct platform_device *pdev)
 {
 	const char *app_name = "qcom.tz.uefisecapp";
 	u32 app_id = U32_MAX;
-	guid_t var_guid = {};
+	efi_guid_t var_guid = {};
 	wchar_t var_name[256] = {};
 	char var_name_u8[256] = {};
 	u64 var_size = ARRAY_SIZE(var_name) * sizeof(var_name[0]);
