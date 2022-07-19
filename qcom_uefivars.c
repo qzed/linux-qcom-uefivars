@@ -237,10 +237,16 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 	struct qseos_dma dma_base;
 	struct qseos_dma dma_req;
 	struct qseos_dma dma_rsp;
-	u64 size = PAGE_SIZE;
+	u64 size;
 	int status;
 
-	// size = (size + PAGE_SIZE) & PAGE_MASK;
+	/* Compute required size. */
+	size = sizeof(*req_data) + sizeof(*guid) + *name_size;    /* Inputs.     */
+	size += sizeof(*rsp_data) + sizeof(*guid) + *name_size;   /* Outputs.    */
+	size += __alignof__(*req_data) + __alignof__(*rsp_data);  /* Alignments. */
+	size = PAGE_ALIGN(size);
+
+	/* Allocate DMA memory. */
 	status = qseos_dma_alloc(dev, &dma_base, size, GFP_KERNEL);
 	if (status)
 		return status;
