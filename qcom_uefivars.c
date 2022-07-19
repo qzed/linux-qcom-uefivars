@@ -252,8 +252,8 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 		return status;
 
 	qseos_dma_aligned(&dma_base, &dma_req, 0, __alignof__(*req_data));
-
 	req_data = dma_req.virt;
+
 	req_data->command_id = TZ_UEFI_VAR_GET_NEXT_VARIABLE;
 	req_data->guid_offset = sizeof(*req_data);
 	req_data->guid_size = sizeof(*guid);
@@ -267,33 +267,37 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, *name_size / sizeof(wchar_t));
 
 	qseos_dma_aligned(&dma_base, &dma_rsp, req_data->length, __alignof__(*rsp_data));
+	rsp_data = dma_rsp.virt;
 
 	dma_wmb();
 	status = qseos_app_send(dev, app_id, dma_req.phys, dma_req.size, dma_rsp.phys, dma_rsp.size);
 	dma_rmb();
 
-	if (status == 0) {
-		rsp_data = dma_rsp.virt;
+	if (status)
+		goto out;
 
-		if (rsp_data->status == 0) {
-			if (rsp_data->name_size > *name_size) {
-				status = -E2BIG;
-				goto out;
-			}
-
-			memcpy(guid, dma_rsp.virt + rsp_data->guid_offset, rsp_data->guid_size);
-			utf16_strlcpy(name, dma_rsp.virt + rsp_data->name_offset, rsp_data->name_size / sizeof(wchar_t));
-			*name_size = rsp_data->name_size;
-		}
+	if (rsp_data->status) {
+		status = -EINVAL;
+		goto out;
 	}
+
+	if (rsp_data->guid_size != sizeof(*guid)) {
+		status = -EPROTO;
+		goto out;
+	}
+
+	if (rsp_data->name_size > *name_size) {
+		status = -E2BIG;
+		goto out;
+	}
+
+	memcpy(guid, dma_rsp.virt + rsp_data->guid_offset, rsp_data->guid_size);
+	utf16_strlcpy(name, dma_rsp.virt + rsp_data->name_offset, rsp_data->name_size / sizeof(wchar_t));
+	*name_size = rsp_data->name_size;
 
 out:
 	qseos_dma_free(dev, &dma_base);
-
-	if (status)
-		return status;
-
-	return 0;
+	return status;
 }
 
 static int qcom_uefivars_probe(struct platform_device *pdev)
