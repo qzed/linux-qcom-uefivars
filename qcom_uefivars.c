@@ -44,7 +44,7 @@ static void qseos_dma_aligned(const struct qseos_dma *base, struct qseos_dma *ou
 
 /* -- UTF-16 helpers. ------------------------------------------------------- */
 
-static u64 utf16_strnlen(wchar_t* str, u64 max)
+static u64 utf16_strnlen(const wchar_t* str, u64 max)
 {
 	u64 i;
 
@@ -53,6 +53,16 @@ static u64 utf16_strnlen(wchar_t* str, u64 max)
 	}
 
 	return i;
+}
+
+static size_t utf16_strlcpy(wchar_t *dst, const wchar_t *src, size_t size)
+{
+	size_t actual = utf16_strnlen(src, size - 1);
+
+	memcpy(dst, src, actual * sizeof(src[0]));
+	dst[actual + 1] = 0;
+
+	return actual;
 }
 
 
@@ -228,7 +238,6 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 	struct qseos_dma dma_req;
 	struct qseos_dma dma_rsp;
 	u64 size = PAGE_SIZE;
-	u64 input_name_len;
 	int status;
 
 	// size = (size + PAGE_SIZE) & PAGE_MASK;
@@ -248,10 +257,8 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 
 	dma_req.size = req_data->length;
 
-	input_name_len = utf16_strnlen(name, *name_size - 1);
 	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
-	memcpy(dma_req.virt + req_data->name_offset, name, input_name_len * sizeof(wchar_t));
-	*(wchar_t *)(dma_req.virt + req_data->name_offset + (input_name_len + 1) * sizeof(wchar_t)) = 0;
+	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, *name_size / sizeof(wchar_t));
 
 	qseos_dma_aligned(&dma_base, &dma_rsp, req_data->length, __alignof__(*rsp_data));
 
@@ -263,13 +270,18 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 		rsp_data = dma_rsp.virt;
 
 		if (rsp_data->status == 0) {
+			if (rsp_data->name_size > *name_size) {
+				status = -E2BIG;
+				goto out;
+			}
+
 			memcpy(guid, dma_rsp.virt + rsp_data->guid_offset, rsp_data->guid_size);
-			memcpy(name, dma_rsp.virt + rsp_data->name_offset, min((u32)*name_size, rsp_data->name_size));
+			utf16_strlcpy(name, dma_rsp.virt + rsp_data->name_offset, rsp_data->name_size / sizeof(wchar_t));
 			*name_size = rsp_data->name_size;
-			name[*name_size - 1] = 0;
 		}
 	}
 
+out:
 	qseos_dma_free(dev, &dma_base);
 
 	if (status)
