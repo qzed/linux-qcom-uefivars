@@ -293,7 +293,7 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 	size = sizeof(*req_data) + sizeof(*guid) + *name_size;    /* Inputs.            */
 	size += sizeof(*rsp_data) + sizeof(*guid) + *name_size;   /* Outputs.           */
 	size += __alignof__(*req_data) + __alignof__(*guid);      /* Input alignments.  */
-	size += __alignof__(*rsp_data);      			  /* Output alignments. */
+	size += __alignof__(*rsp_data);                           /* Output alignments. */
 	size = PAGE_ALIGN(size);
 
 	/* Allocate DMA memory. */
