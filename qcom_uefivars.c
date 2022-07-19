@@ -67,7 +67,7 @@ static size_t utf16_strlcpy(wchar_t *dst, const wchar_t *src, size_t size)
 }
 
 
-/* -- TODO. ----------------------------------------------------------------- */
+/* -- TzApp interface. ------------------------------------------------------ */
 
 #define MAX_APP_NAME_SIZE		64
 
@@ -77,12 +77,6 @@ static size_t utf16_strlcpy(wchar_t *dst, const wchar_t *src, size_t size)
 #define TZ_SVC_APP_ID_PLACEHOLDER	0
 #define TZ_SVC_APP_MGR			1
 #define TZ_SVC_LISTENER			2
-
-#define TZ_UEFI_VAR_CMD(x)		(0x8000 | x)
-#define TZ_UEFI_VAR_GET_VARIABLE	TZ_UEFI_VAR_CMD(0)
-#define TZ_UEFI_VAR_SET_VARIABLE	TZ_UEFI_VAR_CMD(1)
-#define TZ_UEFI_VAR_GET_NEXT_VARIABLE	TZ_UEFI_VAR_CMD(2)
-#define TZ_UEFI_VAR_QUERY_VARIABLE_INFO	TZ_UEFI_VAR_CMD(3)
 
 enum qseecom_qseos_cmd_status {
 	QSEOS_RESULT_SUCCESS = 0,
@@ -101,25 +95,6 @@ struct qseos_res {
 	u64 resp_type;
 	u64 data;
 };
-
-struct qcom_uefi_get_next_variable_name_req {
-	u32 command_id;
-	u32 length;
-	u32 guid_offset;
-	u32 guid_size;
-	u32 name_offset;
-	u32 name_size;
-} __packed;
-
-struct qcom_uefi_get_next_variable_name_rsp {
-	u32 command_id;
-	u32 length;
-	u32 status;
-	u32 guid_offset;
-	u32 guid_size;
-	u32 name_offset;
-	u32 name_size;
-} __packed;
 
 static int __qseos_syscall(const struct qcom_scm_desc *desc, struct qseos_res *res)
 {
@@ -229,6 +204,34 @@ static int qseos_app_send(struct device *dev, u32 app_id, dma_addr_t req,
 
 	return 0;
 }
+
+
+/* -- UEFI app interface. --------------------------------------------------- */
+
+#define TZ_UEFI_VAR_CMD(x)		(0x8000 | x)
+#define TZ_UEFI_VAR_GET_VARIABLE	TZ_UEFI_VAR_CMD(0)
+#define TZ_UEFI_VAR_SET_VARIABLE	TZ_UEFI_VAR_CMD(1)
+#define TZ_UEFI_VAR_GET_NEXT_VARIABLE	TZ_UEFI_VAR_CMD(2)
+#define TZ_UEFI_VAR_QUERY_VARIABLE_INFO	TZ_UEFI_VAR_CMD(3)
+
+struct qcom_uefi_get_next_variable_name_req {
+	u32 command_id;
+	u32 length;
+	u32 guid_offset;
+	u32 guid_size;
+	u32 name_offset;
+	u32 name_size;
+} __packed;
+
+struct qcom_uefi_get_next_variable_name_rsp {
+	u32 command_id;
+	u32 length;
+	u32 status;
+	u32 guid_offset;
+	u32 guid_size;
+	u32 name_offset;
+	u32 name_size;
+} __packed;
 
 static efi_status_t qseos_uefi_status_to_efi(u32 status)
 {
