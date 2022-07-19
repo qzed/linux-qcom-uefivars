@@ -228,6 +228,7 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 	struct qseos_dma dma_req;
 	struct qseos_dma dma_rsp;
 	u64 size = PAGE_SIZE;
+	u64 input_name_len;
 	int status;
 
 	// size = (size + PAGE_SIZE) & PAGE_MASK;
@@ -247,9 +248,10 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 
 	dma_req.size = req_data->length;
 
+	input_name_len = utf16_strnlen(name, *name_size - 1);
 	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
-	memcpy(dma_req.virt + req_data->name_offset, name, utf16_strnlen(name, *name_size));
-	*(wchar_t *)(dma_req.virt + req_data->name_offset + utf16_strnlen(name, *name_size)) = 0;
+	memcpy(dma_req.virt + req_data->name_offset, name, input_name_len * sizeof(wchar_t));
+	*(wchar_t *)(dma_req.virt + req_data->name_offset + (input_name_len + 1) * sizeof(wchar_t)) = 0;
 
 	qseos_dma_aligned(&dma_base, &dma_rsp, req_data->length, __alignof__(*rsp_data));
 
