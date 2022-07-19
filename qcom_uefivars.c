@@ -241,7 +241,7 @@ static efi_status_t qseos_uefi_status_to_efi(u32 status)
 	return category << (BITS_PER_LONG - 32) | code;
 }
 
-// NOTE: copied from kernel, not required in final driver
+// NOTE: adapted from kernel, not required in final driver
 int __efi_status_to_err(efi_status_t status)
 {
 	int err;
@@ -271,6 +271,9 @@ int __efi_status_to_err(efi_status_t status)
 	case EFI_ABORTED:
 		err = -EINTR;
 		break;
+	case EFI_BUFFER_TOO_SMALL:
+		err = -E2BIG;
+		break;
 	default:
 		err = -EINVAL;
 	}
@@ -286,8 +289,9 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 	struct qseos_dma dma_base;
 	struct qseos_dma dma_req;
 	struct qseos_dma dma_rsp;
-	u64 size;
+	efi_status_t efi_status;
 	int status;
+	u64 size;
 
 	/* Compute required size. */
 	size = sizeof(*req_data) + sizeof(*guid) + *name_size;    /* Inputs.            */
@@ -333,7 +337,14 @@ static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 		goto out;
 
 	if (rsp_data->status) {
-		status = __efi_status_to_err(qseos_uefi_status_to_efi(rsp_data->status));
+		dev_err(dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
+		efi_status = qseos_uefi_status_to_efi(rsp_data->status);
+
+		/* Update size with required size in case buffer is too small. */
+		if (efi_status == EFI_BUFFER_TOO_SMALL)
+			*name_size = rsp_data->name_size;
+
+		status = __efi_status_to_err(efi_status);
 		goto out;
 	}
 
