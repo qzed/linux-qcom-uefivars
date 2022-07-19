@@ -9,6 +9,55 @@
 #include <linux/uuid.h>
 #include <linux/nls.h>
 
+
+/* -- DMA helpers. ---------------------------------------------------------- */
+
+struct qseos_dma {
+	unsigned long size;
+	void *virt;
+	dma_addr_t phys;
+};
+
+static int qseos_dma_alloc(struct device *dev, struct qseos_dma *dma, u64 size, gfp_t gfp)
+{
+	dma->virt = dma_alloc_coherent(dev, size, &dma->phys, GFP_KERNEL);
+	if (!dma->virt)
+		return -ENOMEM;
+	
+	dma->size = size;
+	return 0;
+}
+
+static void qseos_dma_free(struct device *dev, struct qseos_dma *dma)
+{
+	dma_free_coherent(dev, dma->size, dma->virt, dma->phys);
+}
+
+static void qseos_dma_aligned(const struct qseos_dma *base, struct qseos_dma *out,
+			      u64 offset, u64 align)
+{
+	out->virt = (void *)ALIGN((uintptr_t)base->virt + offset, align);
+	out->phys = base->phys + (out->virt - base->virt);
+	out->size = base->size - (out->virt - base->virt);
+}
+
+
+/* -- UTF-16 helpers. ------------------------------------------------------- */
+
+static u64 utf16_strnlen(wchar_t* str, u64 max)
+{
+	u64 i;
+
+	for (i = 0; *str != 0 && i < max; i++, str++) {
+		/* Do nothing, all is handled in the for statement. */
+	}
+
+	return i;
+}
+
+
+/* -- TODO. ----------------------------------------------------------------- */
+
 #define MAX_APP_NAME_SIZE		64
 
 #define TZ_OWNER_TZ_APPS		48
@@ -168,46 +217,6 @@ static int qseos_app_send(struct device *dev, u32 app_id, dma_addr_t req,
 	return 0;
 }
 
-static u64 utf16_strnlen(wchar_t* str, u64 max)
-{
-	u64 i;
-
-	for (i = 0; *str != 0 && i < max; i++, str++) {
-		/* Do nothing, all is handled in the for statement. */
-	}
-
-	return i;
-}
-
-struct qseos_dma {
-	unsigned long size;
-	void *virt;
-	dma_addr_t phys;
-};
-
-static int qseos_dma_alloc(struct device *dev, struct qseos_dma *dma, u64 size, gfp_t gfp)
-{
-	dma->virt = dma_alloc_coherent(dev, size, &dma->phys, GFP_KERNEL);
-	if (!dma->virt)
-		return -ENOMEM;
-	
-	dma->size = size;
-	return 0;
-}
-
-static void qseos_dma_free(struct device *dev, struct qseos_dma *dma)
-{
-	dma_free_coherent(dev, dma->size, dma->virt, dma->phys);
-}
-
-static void qseos_dma_aligned(const struct qseos_dma *base, struct qseos_dma *out,
-			      u64 offset, u64 align)
-{
-	out->virt = (void *)ALIGN((uintptr_t)base->virt + offset, align);
-	out->phys = base->phys + (out->virt - base->virt);
-	out->size = base->size - (out->virt - base->virt);
-}
-
 static int qseos_uefi_get_next_variable_name(struct device *dev, u32 app_id,
 					     u64 *name_size, wchar_t* name, guid_t* guid)
 {
@@ -314,6 +323,9 @@ static struct platform_driver qcom_uefivars_driver = {
 		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 	},
 };
+
+
+/* -- Module initialization. ------------------------------------------------ */
 
 static struct platform_device *qcom_uefivars_device;
 
