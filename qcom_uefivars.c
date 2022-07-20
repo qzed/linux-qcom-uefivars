@@ -3,6 +3,7 @@
 #include <linux/kernel.h>
 #include <linux/mm.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/platform_device.h>
 #include <linux/printk.h>
 #include <linux/qcom_scm.h>
@@ -230,6 +231,8 @@ static int qseos_app_send(struct device *dev, u32 app_id, dma_addr_t req,
 
 struct qcom_uefi_app {
 	struct device *dev;
+	struct kobject *kobj;
+	struct efivars efivars;
 	struct qseos_dma dma;
 	u32 app_id;
 };
@@ -692,231 +695,90 @@ static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32
 }
 
 
-/* -- TEMPORARY test stuf. -------------------------------------------------- */
+/* -- Global efivar interface. ---------------------------------------------- */
 
-int __efi_status_to_err(efi_status_t status)
+static struct qcom_uefi_app *__qcuefi;
+static DEFINE_MUTEX(__qcuefi_lock);
+
+static int qcuefi_set_reference(struct qcom_uefi_app *qcuefi)
 {
-	int err;
+	mutex_lock(&__qcuefi_lock);
 
-	switch (status) {
-	case EFI_SUCCESS:
-		err = 0;
-		break;
-	case EFI_INVALID_PARAMETER:
-		err = -EINVAL;
-		break;
-	case EFI_OUT_OF_RESOURCES:
-		err = -ENOSPC;
-		break;
-	case EFI_DEVICE_ERROR:
-		err = -EIO;
-		break;
-	case EFI_WRITE_PROTECTED:
-		err = -EROFS;
-		break;
-	case EFI_SECURITY_VIOLATION:
-		err = -EACCES;
-		break;
-	case EFI_NOT_FOUND:
-		err = -ENOENT;
-		break;
-	case EFI_ABORTED:
-		err = -EINTR;
-		break;
-	case EFI_BUFFER_TOO_SMALL:
-		err = -E2BIG;
-		break;
-	default:
-		err = -EINVAL;
+	if (qcuefi && __qcuefi) {
+		mutex_unlock(&__qcuefi_lock);
+		return -EEXIST;
 	}
 
-	return err;
+	__qcuefi = qcuefi;
+
+	mutex_unlock(&__qcuefi_lock);
+	return 0;
 }
 
-static efi_status_t _qcuefi_query_and_print_variable_info(struct qcom_uefi_app *qcuefi)
+static struct qcom_uefi_app *qcuefi_acquire(void)
 {
-	efi_status_t status;
-	u32 attrs = EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS | EFI_VARIABLE_NON_VOLATILE;
-	u64 storage_space;
-	u64 remaining_space;
-	u64 max_variable_size;
-
-	status = qcuefi_query_variable_info(qcuefi, attrs, &storage_space, &remaining_space, &max_variable_size);
-	if (status != EFI_SUCCESS) {
-		dev_err(qcuefi->dev, "%s: error: %lx\n", __func__, status);
-		return status;
-	}
-
-	dev_info(qcuefi->dev, "%s: attrs=0x%x\n", __func__, attrs);
-	dev_info(qcuefi->dev, "%s: storage_space=0x%llx\n", __func__, storage_space);
-	dev_info(qcuefi->dev, "%s: remaining_space=0x%llx\n", __func__, remaining_space);
-	dev_info(qcuefi->dev, "%s: max_variable_size=0x%llx\n", __func__, max_variable_size);
-
-	return EFI_SUCCESS;
+	mutex_lock(&__qcuefi_lock);
+	return __qcuefi;
 }
 
-static efi_status_t _qcuefi_get_and_print_next(struct qcom_uefi_app *qcuefi,
-					       unsigned long *name_size, efi_char16_t* name,
-					       efi_guid_t* guid)
+static void qcuefi_release(void)
 {
-	char name_u8[256] = {};
+	mutex_unlock(&__qcuefi_lock);
+}
+
+static efi_status_t qcv_get_variable(efi_char16_t *name, efi_guid_t *vendor, u32 *attr,
+				     unsigned long *data_size, void *data)
+{
+	struct qcom_uefi_app *qcuefi;
 	efi_status_t status;
 
-	status = qcuefi_get_next_variable(qcuefi, name_size, name, guid);
-	if (status != EFI_SUCCESS) {
-		dev_err(qcuefi->dev, "%s: failed to read variable: status=0x%lx\n",
-			__func__, status);
-		return status;
-	}
+	qcuefi = qcuefi_acquire();
+	if (!qcuefi)
+		return EFI_NOT_READY;
 
-	utf16s_to_utf8s(name, *name_size, UTF16_LITTLE_ENDIAN, name_u8, ARRAY_SIZE(name_u8) - 1);
-	dev_info(qcuefi->dev, "%s: name=%s, guid=%pUL\n", __func__, name_u8, guid);
+	status = qcuefi_get_variable(qcuefi, name, vendor, attr, data_size, data);
 
-	return EFI_SUCCESS;
+	qcuefi_release();
+	return status;
 }
 
-static efi_status_t _qcuefi_get_and_dump_variable(struct qcom_uefi_app *qcuefi, const efi_char16_t *name,
-						  const efi_guid_t *guid)
+static efi_status_t qcv_set_variable(efi_char16_t *name, efi_guid_t *vendor,
+				     u32 attr, unsigned long data_size, void *data)
 {
-	char name_u8[256] = {};
-	u8 data[512] = {};
-	unsigned long size = ARRAY_SIZE(data);
-	u32 attrs = 0;
+	struct qcom_uefi_app *qcuefi;
 	efi_status_t status;
 
-	status = qcuefi_get_variable(qcuefi, name, guid, &attrs, &size, data);
-	if (status != EFI_SUCCESS) {
-		dev_err(qcuefi->dev, "failed, to get variable: 0x%lx\n", status);
-		return status;
-	}
+	qcuefi = qcuefi_acquire();
+	if (!qcuefi)
+		return EFI_NOT_READY;
 
-	utf16s_to_utf8s(name, utf16_strnlen(name, ARRAY_SIZE(name_u8) - 1), UTF16_LITTLE_ENDIAN,
-			name_u8, ARRAY_SIZE(name_u8) - 1);
-	dev_info(qcuefi->dev, "%s: name=%s, guid=%pUL, attrs=0x%x\n", __func__, name_u8, guid, attrs);
-	print_hex_dump(KERN_INFO, "qcom_uefivars qcom_uefivars: _qcuefi_get_and_dump_variable: data: ",
-		       DUMP_PREFIX_OFFSET, 16, 1, data, size, true);
+	status = qcuefi_set_variable(qcuefi, name, vendor, attr, data_size, data);
 
-	return EFI_SUCCESS;
+	qcuefi_release();
+	return status;
 }
 
-static efi_status_t _qcuefi_dump_variables(struct qcom_uefi_app *qcuefi)
+static efi_status_t qcv_get_next_variable(unsigned long *name_size, efi_char16_t *name,
+					  efi_guid_t *vendor)
 {
-	_qcuefi_get_and_dump_variable(qcuefi, L"SecureBoot", &EFI_GLOBAL_VARIABLE_GUID);
-	_qcuefi_get_and_dump_variable(qcuefi, L"SetupMode", &EFI_GLOBAL_VARIABLE_GUID);
-	_qcuefi_get_and_dump_variable(qcuefi, L"Lang", &EFI_GLOBAL_VARIABLE_GUID);
-	_qcuefi_get_and_dump_variable(qcuefi, L"PlatformLang", &EFI_GLOBAL_VARIABLE_GUID);
-
-	return EFI_SUCCESS;
-}
-
-static efi_status_t _qcuefi_set_variable(struct qcom_uefi_app *qcuefi)
-{
-	const char *name_u8 = "ThisIsATest";
-	const efi_char16_t *name = L"ThisIsATest";
-	const efi_guid_t *guid = &EFI_GLOBAL_VARIABLE_GUID;
-
-	char data[64] = {};
-	unsigned long data_size;
-	u32 attrs;
-
-	char *new_data = "testing123";
-	unsigned long new_data_size = strlen(new_data) + 1;
-	u32 new_attrs = 7;
-
+	struct qcom_uefi_app *qcuefi;
 	efi_status_t status;
 
-	/* Try to get the variable, it shouldn't exist yet. */
-	status = qcuefi_get_variable(qcuefi, name, guid, &attrs, &data_size, data);
-	if (status != EFI_NOT_FOUND) {
-		dev_err(qcuefi->dev, "failed, to get variable: 0x%lx\n", status);
-		return EFI_ABORTED;
-	}
+	qcuefi = qcuefi_acquire();
+	if (!qcuefi)
+		return EFI_NOT_READY;
 
-	/* Create/set the variable. */
-	status = qcuefi_set_variable(qcuefi, name, guid, new_attrs, new_data_size, new_data);
-	if (status != EFI_SUCCESS) {
-		dev_err(qcuefi->dev, "failed, to set variable: 0x%lx\n", status);
-		return status;
-	}
+	status = qcuefi_get_next_variable(qcuefi, name_size, name, vendor);
 
-	/* Read it back. */
-	data_size = ARRAY_SIZE(data);
-	status = qcuefi_get_variable(qcuefi, name, guid, &attrs, &data_size, data);
-	if (status != EFI_SUCCESS) {
-		dev_err(qcuefi->dev, "failed, to get variable: 0x%lx\n", status);
-		return status;
-	}
-
-	dev_info(qcuefi->dev, "%s: name=%s, guid=%pUL, attrs=0x%x, size=%lx\n", __func__, name_u8, guid, attrs, data_size);
-	print_hex_dump(KERN_INFO, "qcom_uefivars qcom_uefivars: _qcuefi_get_and_set_variable: data: ",
-		       DUMP_PREFIX_OFFSET, 16, 1, data, data_size, true);
-
-	/* Delete it. */
-	status = qcuefi_set_variable(qcuefi, name, guid, 0, 0, NULL);
-	if (status != EFI_SUCCESS) {
-		dev_err(qcuefi->dev, "failed, to set variable: 0x%lx\n", status);
-		return status;
-	}
-
-	/* Read it back again, it shouldn't exist any more. */
-	status = qcuefi_get_variable(qcuefi, name, guid, &attrs, &data_size, data);
-	if (status != EFI_NOT_FOUND) {
-		dev_err(qcuefi->dev, "failed, to get variable: 0x%lx\n", status);
-		return EFI_ABORTED;
-	}
-
-	return EFI_SUCCESS;
+	qcuefi_release();
+	return status;
 }
 
-static efi_status_t _qcuefi_dump_names_and_guid(struct qcom_uefi_app *qcuefi)
-{
-	efi_char16_t var_name[256] = {};
-	efi_guid_t var_guid = {};
-	unsigned long var_size;
-	efi_status_t status;
-	int i;
-
-	for (i = 0; i < 100; i++) {
-		var_size = ARRAY_SIZE(var_name) * sizeof(var_name[0]);
-		status = _qcuefi_get_and_print_next(qcuefi, &var_size, var_name, &var_guid);
-		if (status == EFI_NOT_FOUND) {
-			dev_info(qcuefi->dev, "end of variables reached\n");
-			break;
-		}
-		if (status != EFI_SUCCESS)
-			return status;
-	}
-
-	return EFI_SUCCESS;
-}
-
-static efi_status_t ___qcuefi_test(struct qcom_uefi_app *qcuefi)
-{
-	efi_status_t status;
-
-	status = _qcuefi_query_and_print_variable_info(qcuefi);
-	if (status != EFI_SUCCESS)
-		return status;
-
-	status = _qcuefi_dump_names_and_guid(qcuefi);
-	if (status != EFI_SUCCESS)
-		return status;
-
-	status = _qcuefi_dump_variables(qcuefi);
-	if (status != EFI_SUCCESS)
-		return status;
-
-	status = _qcuefi_set_variable(qcuefi);
-	if (status != EFI_SUCCESS)
-		return status;
-
-	return EFI_SUCCESS;
-}
-
-static int _qcuefi_test(struct qcom_uefi_app *qcuefi)
-{
-	return __efi_status_to_err(___qcuefi_test(qcuefi));
-}
+static const struct efivar_operations efivar_ops = {
+	.get_variable = qcv_get_variable,
+	.set_variable = qcv_set_variable,
+	.get_next_variable = qcv_get_next_variable,
+};
 
 
 /* -- Driver setup. --------------------------------------------------------- */
@@ -948,16 +810,31 @@ static int qcom_uefivars_probe(struct platform_device *pdev)
 	if (status)
 		return status;
 
-	platform_set_drvdata(pdev, qcuefi);
+	/* Set up kobject for efivars interface. */
+	qcuefi->kobj = kobject_create_and_add("qcuefisecapp", firmware_kobj);
+	if (!qcuefi->kobj) {
+		status = -ENOMEM;
+		goto err_kobj;
+	}
 
-	/* Run tests. */
-	status = _qcuefi_test(qcuefi);
+	/* Registe rglobal reference. */
+	platform_set_drvdata(pdev, qcuefi);
+	status = qcuefi_set_reference(qcuefi);
 	if (status)
-		goto err;
+		goto err_ref;
+
+	/* Register efivars. */
+	status = efivars_register(&qcuefi->efivars, &efivar_ops, qcuefi->kobj);
+	if (status)
+		goto err_register;
 
 	return 0;
 
-err:
+err_register:
+	qcuefi_set_reference(NULL);
+err_ref:
+	kobject_put(qcuefi->kobj);
+err_kobj:
 	qseos_dma_free(qcuefi->dev, &qcuefi->dma);
 	return status;
 }
@@ -966,7 +843,16 @@ static int qcom_uefivars_remove(struct platform_device *pdev)
 {
 	struct qcom_uefi_app *qcuefi = platform_get_drvdata(pdev);
 
+	/* Unregister efivar ops. */
+	efivars_unregister(&qcuefi->efivars);
+
+	/* Block on pending calls and unregister global reference. */
+	qcuefi_set_reference(NULL);
+
+	/* Free remaining resources. */
+	kobject_put(qcuefi->kobj);
 	qseos_dma_free(qcuefi->dev, &qcuefi->dma);
+
 	return 0;
 }
 
