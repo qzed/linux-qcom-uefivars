@@ -727,6 +727,9 @@ static int qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32 attr, u6
 	return 0;
 }
 
+
+/* -- TEMPORARY test stuf. -------------------------------------------------- */
+
 static int _qcuefi_query_and_print_variable_info(struct qcom_uefi_app *qcuefi)
 {
 	int status;
@@ -902,6 +905,9 @@ static int _qcuefi_test(struct qcom_uefi_app *qcuefi)
 
 	return 0;
 }
+
+
+/* -- Driver setup. --------------------------------------------------------- */
 
 static int qcom_uefivars_probe(struct platform_device *pdev)
 {
