@@ -406,7 +406,7 @@ static int qcom_uefivars_probe(struct platform_device *pdev)
 	if (status)
 		return status;
 
-	for (i = 0; i < 5; i++) {
+	for (i = 0; i < 100; i++) {
 		var_size = ARRAY_SIZE(var_name) * sizeof(var_name[0]);
 		status = _get_and_print_next(&pdev->dev, app_id, &var_size, var_name, &var_guid);
 		if (status == -ENOENT) {
