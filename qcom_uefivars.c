@@ -219,7 +219,7 @@ static int qseos_app_send(struct device *dev, u32 app_id, dma_addr_t req,
 		return status;
 
 	if (res.status != QSEOS_RESULT_SUCCESS)
-		return -EFAULT;
+		return -EIO;
 
 	return 0;
 }
