@@ -147,7 +147,19 @@ static int qseos_syscall(struct device *dev, const struct qcom_scm_desc *desc, s
 		return status;
 	}
 
-	// TODO: handle incomplete calls
+	/*
+	 * TODO: Handle incomplete and blocked calls:
+	 *
+	 * Incomplete and blocked calls are not supported yet. Some devices
+	 * and/or commands require those, some don't. Let's warn about them
+	 * prominently in case someone attempts to try these commands with a
+	 * device/command combination that isn't supported yet.
+	 * 
+	 * Note that supporting incomplete/reentrant calls will also require
+	 * proper locking here.
+	 */
+	WARN_ON(res->status == QSEOS_RESULT_INCOMPLETE);
+	WARN_ON(res->status == QSEOS_RESULT_BLOCKED_ON_LISTENER);
 
 	return 0;
 }
