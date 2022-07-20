@@ -380,11 +380,13 @@ static int qcuefi_get_next_variable_name(struct qcom_uefi_app *qcuefi, u64 *name
 		return __efi_status_to_err(efi_status);
 	}
 
+	if (rsp_data->name_size > *name_size) {
+		*name_size = rsp_data->name_size;
+		return -E2BIG;
+	}
+
 	if (rsp_data->guid_size != sizeof(*guid))
 		return -EPROTO;
-
-	if (rsp_data->name_size > *name_size)
-		return -E2BIG;
 
 	/* Copy response fields. */
 	memcpy(guid, dma_rsp.virt + rsp_data->guid_offset, rsp_data->guid_size);
