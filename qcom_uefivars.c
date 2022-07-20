@@ -7,6 +7,7 @@
 #include <linux/printk.h>
 #include <linux/qcom_scm.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 #include <linux/uuid.h>
 #include <linux/nls.h>
 
