@@ -342,15 +342,15 @@ int __efi_status_to_err(efi_status_t status)
 static int qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const wchar_t *name,
 			       const efi_guid_t *guid, u32 *attributes, u64 *data_size, void *data)
 {
-	u64 name_size = utf16_strsize(name, U32_MAX);
 	struct qcom_uefi_get_variable_req *req_data;
 	struct qcom_uefi_get_variable_rsp *rsp_data;
 	struct qseos_dma dma_req;
 	struct qseos_dma dma_rsp;
+	u64 name_size = utf16_strsize(name, U32_MAX);
 	u64 buffer_size = *data_size;
+	u64 size;
 	efi_status_t efi_status;
 	int status;
-	u64 size;
 
 	/* Validation: We need a name and GUID. */
 	if (!name || !guid)
@@ -558,8 +558,8 @@ static int qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32 attr, u6
 	struct qcom_uefi_query_variable_info_rsp *rsp_data;
 	struct qseos_dma dma_req;
 	struct qseos_dma dma_rsp;
-	int status;
 	u64 size;
+	int status;
 
 	/* Compute required size. */
 	size = sizeof(*req_data) + sizeof(*rsp_data);
