@@ -624,6 +624,7 @@ static efi_status_t qcuefi_get_next_variable(struct qcom_uefi_app *qcuefi, unsig
 	return 0;
 }
 
+__maybe_unused	// TODO: use this somehow...?
 static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32 attributes,
 					       u64 *storage_space, u64 *remaining_space,
 					       u64 *max_variable_size)
