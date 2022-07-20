@@ -61,7 +61,7 @@ static size_t utf16_strlcpy(wchar_t *dst, const wchar_t *src, size_t size)
 	size_t actual = utf16_strnlen(src, size - 1);
 
 	memcpy(dst, src, actual * sizeof(src[0]));
-	dst[actual + 1] = 0;
+	dst[actual] = 0;
 
 	return actual;
 }
