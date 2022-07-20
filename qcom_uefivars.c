@@ -354,7 +354,7 @@ static int qcuefi_get_next_variable_name(struct qcom_uefi_app *qcuefi, u64 *name
 		return status;
 
 	if (rsp_data->status) {
-		dev_err(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
+		dev_dbg(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
 		efi_status = qseos_uefi_status_to_efi(rsp_data->status);
 
 		/* Update size with required size in case buffer is too small. */
