@@ -326,6 +326,14 @@ static int qcuefi_get_next_variable_name(struct qcom_uefi_app *qcuefi, u64 *name
 	int status;
 	u64 size;
 
+	/* We need some buffers. */
+	if (!name_size || !name || !guid)
+		return -EINVAL;
+
+	/* There needs to be at least a single nul character. */
+	if (*name_size == 0)
+		return -EINVAL;
+
 	/* Compute required size. */
 	size = sizeof(*req_data) + sizeof(*guid) + *name_size;    /* Inputs.            */
 	size += sizeof(*rsp_data) + sizeof(*guid) + *name_size;   /* Outputs.           */
@@ -448,9 +456,14 @@ static int qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32 attr, u6
 		return __efi_status_to_err(qseos_uefi_status_to_efi(rsp_data->status));
 	}
 
-	*storage_space = rsp_data->storage_space;
-	*remaining_space = rsp_data->remaining_space;
-	*max_variable_size = rsp_data->max_variable_size;
+	if (storage_space)
+		*storage_space = rsp_data->storage_space;
+
+	if (remaining_space)
+		*remaining_space = rsp_data->remaining_space;
+
+	if (max_variable_size)
+		*max_variable_size = rsp_data->max_variable_size;
 
 	return 0;
 }
