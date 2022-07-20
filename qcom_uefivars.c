@@ -22,7 +22,7 @@ struct qseos_dma {
 	dma_addr_t phys;
 };
 
-static int qseos_dma_alloc(struct device *dev, struct qseos_dma *dma, u64 size, gfp_t gfp)
+static int qseos_dma_alloc(struct device *dev, struct qseos_dma *dma, unsigned long size, gfp_t gfp)
 {
 	dma->virt = dma_alloc_coherent(dev, size, &dma->phys, GFP_KERNEL);
 	if (!dma->virt)
@@ -37,7 +37,8 @@ static void qseos_dma_free(struct device *dev, struct qseos_dma *dma)
 	dma_free_coherent(dev, dma->size, dma->virt, dma->phys);
 }
 
-static int qseos_dma_realloc(struct device *dev, struct qseos_dma *dma, u64 size, gfp_t gfp)
+static int qseos_dma_realloc(struct device *dev, struct qseos_dma *dma, unsigned long size,
+			     gfp_t gfp)
 {
 	if (size <= dma->size)
 		return 0;
@@ -47,7 +48,7 @@ static int qseos_dma_realloc(struct device *dev, struct qseos_dma *dma, u64 size
 }
 
 static void qseos_dma_aligned(const struct qseos_dma *base, struct qseos_dma *out,
-			      u64 offset)
+			      unsigned long offset)
 {
 	out->virt = (void *)QSEOS_DMA_ALIGN((uintptr_t)base->virt + offset);
 	out->phys = base->phys + (out->virt - base->virt);
@@ -57,7 +58,7 @@ static void qseos_dma_aligned(const struct qseos_dma *base, struct qseos_dma *ou
 
 /* -- UTF-16 helpers. ------------------------------------------------------- */
 
-static size_t utf16_strnlen(const wchar_t* str, u64 max)
+static unsigned long utf16_strnlen(const efi_char16_t* str, unsigned long max)
 {
 	size_t i;
 
@@ -68,14 +69,14 @@ static size_t utf16_strnlen(const wchar_t* str, u64 max)
 	return i;
 }
 
-static size_t utf16_strsize(const wchar_t* str, u64 max)
+static unsigned long utf16_strsize(const efi_char16_t* str, unsigned long max)
 {
 	return (utf16_strnlen(str, max) + 1) * sizeof(str[0]);
 }
 
-static size_t utf16_strlcpy(wchar_t *dst, const wchar_t *src, size_t size)
+static unsigned long utf16_strlcpy(efi_char16_t *dst, const efi_char16_t *src, unsigned long size)
 {
-	size_t actual = utf16_strnlen(src, size - 1);
+	unsigned long actual = utf16_strnlen(src, size - 1);
 
 	memcpy(dst, src, actual * sizeof(src[0]));
 	dst[actual] = 0;
@@ -321,17 +322,17 @@ static efi_status_t qseos_uefi_status_to_efi(u32 status)
 	return category << (BITS_PER_LONG - 32) | code;
 }
 
-static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const wchar_t *name,
-					const efi_guid_t *guid, u32 *attributes, u64 *data_size,
-					void *data)
+static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const efi_char16_t *name,
+					const efi_guid_t *guid, u32 *attributes,
+					unsigned long *data_size, void *data)
 {
 	struct qcom_uefi_get_variable_req *req_data;
 	struct qcom_uefi_get_variable_rsp *rsp_data;
 	struct qseos_dma dma_req;
 	struct qseos_dma dma_rsp;
-	u64 name_size = utf16_strsize(name, U32_MAX);
-	u64 buffer_size = *data_size;
-	u64 size;
+	unsigned long name_size = utf16_strsize(name, U32_MAX);
+	unsigned long buffer_size = *data_size;
+	unsigned long size;
 	efi_status_t efi_status;
 	int status;
 
@@ -371,7 +372,7 @@ static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const wcha
 	dma_req.size = req_data->length;
 
 	/* Copy request parameters. */
-	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, name_size / sizeof(wchar_t));
+	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, name_size / sizeof(name[0]));
 	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
 
 	/* Align response struct. */
@@ -432,16 +433,16 @@ static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const wcha
 	return EFI_SUCCESS;
 }
 
-static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const wchar_t *name,
-					const efi_guid_t *guid, u32 attributes, u64 data_size,
-					const void *data)
+static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_char16_t *name,
+					const efi_guid_t *guid, u32 attributes,
+					unsigned long data_size, const void *data)
 {
 	struct qcom_uefi_set_variable_req *req_data;
 	struct qcom_uefi_set_variable_rsp *rsp_data;
 	struct qseos_dma dma_req;
 	struct qseos_dma dma_rsp;
-	u64 name_size = utf16_strsize(name, U32_MAX);
-	u64 size;
+	unsigned long name_size = utf16_strsize(name, U32_MAX);
+	unsigned long size;
 	int status;
 
 	/* Validate inputs. */
@@ -517,16 +518,17 @@ static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const wcha
 	return EFI_SUCCESS;
 }
 
-static efi_status_t qcuefi_get_next_variable_name(struct qcom_uefi_app *qcuefi, u64 *name_size,
-						  wchar_t *name, efi_guid_t *guid)
+static efi_status_t qcuefi_get_next_variable_name(struct qcom_uefi_app *qcuefi,
+						  unsigned long *name_size, efi_char16_t *name,
+						  efi_guid_t *guid)
 {
 	struct qcom_uefi_get_next_variable_name_req *req_data;
 	struct qcom_uefi_get_next_variable_name_rsp *rsp_data;
 	struct qseos_dma dma_req;
 	struct qseos_dma dma_rsp;
+	unsigned long size;
 	efi_status_t efi_status;
 	int status;
-	u64 size;
 
 	/* We need some buffers. */
 	if (!name_size || !name || !guid)
@@ -564,7 +566,7 @@ static efi_status_t qcuefi_get_next_variable_name(struct qcom_uefi_app *qcuefi, 
 
 	/* Copy request parameters. */
 	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
-	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, *name_size / sizeof(wchar_t));
+	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, *name_size / sizeof(name[0]));
 
 	/* Align response struct. */
 	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
@@ -613,13 +615,14 @@ static efi_status_t qcuefi_get_next_variable_name(struct qcom_uefi_app *qcuefi, 
 
 	/* Copy response fields. */
 	memcpy(guid, dma_rsp.virt + rsp_data->guid_offset, rsp_data->guid_size);
-	utf16_strlcpy(name, dma_rsp.virt + rsp_data->name_offset, rsp_data->name_size / sizeof(wchar_t));
+	utf16_strlcpy(name, dma_rsp.virt + rsp_data->name_offset,
+		      rsp_data->name_size / sizeof(name[0]));
 	*name_size = rsp_data->name_size;
 
 	return 0;
 }
 
-static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32 attr,
+static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32 attributes,
 					       u64 *storage_space, u64 *remaining_space,
 					       u64 *max_variable_size)
 {
@@ -627,7 +630,7 @@ static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32
 	struct qcom_uefi_query_variable_info_rsp *rsp_data;
 	struct qseos_dma dma_req;
 	struct qseos_dma dma_rsp;
-	u64 size;
+	unsigned long size;
 	int status;
 
 	/* Compute required size. */
@@ -647,7 +650,7 @@ static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32
 	/* Set up request data. */
 	req_data->command_id = TZ_UEFI_VAR_QUERY_VARIABLE_INFO;
 	req_data->length = sizeof(*req_data);
-	req_data->attributes = attr;
+	req_data->attributes = attributes;
 
 	/* Align response struct. */
 	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
@@ -753,8 +756,9 @@ static efi_status_t _qcuefi_query_and_print_variable_info(struct qcom_uefi_app *
 	return EFI_SUCCESS;
 }
 
-static efi_status_t _qcuefi_get_and_print_next(struct qcom_uefi_app *qcuefi, u64 *name_size,
-					       wchar_t* name, efi_guid_t* guid)
+static efi_status_t _qcuefi_get_and_print_next(struct qcom_uefi_app *qcuefi,
+					       unsigned long *name_size, efi_char16_t* name,
+					       efi_guid_t* guid)
 {
 	char name_u8[256] = {};
 	efi_status_t status;
@@ -772,12 +776,12 @@ static efi_status_t _qcuefi_get_and_print_next(struct qcom_uefi_app *qcuefi, u64
 	return EFI_SUCCESS;
 }
 
-static efi_status_t _qcuefi_get_and_dump_variable(struct qcom_uefi_app *qcuefi, const wchar_t *name,
+static efi_status_t _qcuefi_get_and_dump_variable(struct qcom_uefi_app *qcuefi, const efi_char16_t *name,
 						  const efi_guid_t *guid)
 {
 	char name_u8[256] = {};
 	u8 data[512] = {};
-	u64 size = ARRAY_SIZE(data);
+	unsigned long size = ARRAY_SIZE(data);
 	u32 attrs = 0;
 	efi_status_t status;
 
@@ -809,15 +813,15 @@ static efi_status_t _qcuefi_dump_variables(struct qcom_uefi_app *qcuefi)
 static efi_status_t _qcuefi_set_variable(struct qcom_uefi_app *qcuefi)
 {
 	const char *name_u8 = "ThisIsATest";
-	const wchar_t *name = L"ThisIsATest";
+	const efi_char16_t *name = L"ThisIsATest";
 	const efi_guid_t *guid = &EFI_GLOBAL_VARIABLE_GUID;
 
 	char data[64] = {};
-	u64 data_size;
+	unsigned long data_size;
 	u32 attrs;
 
 	char *new_data = "testing123";
-	u64 new_data_size = strlen(new_data) + 1;
+	unsigned long new_data_size = strlen(new_data) + 1;
 	u32 new_attrs = 7;
 
 	efi_status_t status;
@@ -844,7 +848,7 @@ static efi_status_t _qcuefi_set_variable(struct qcom_uefi_app *qcuefi)
 		return status;
 	}
 
-	dev_info(qcuefi->dev, "%s: name=%s, guid=%pUL, attrs=0x%x, size=%llx\n", __func__, name_u8, guid, attrs, data_size);
+	dev_info(qcuefi->dev, "%s: name=%s, guid=%pUL, attrs=0x%x, size=%lx\n", __func__, name_u8, guid, attrs, data_size);
 	print_hex_dump(KERN_INFO, "qcom_uefivars qcom_uefivars: _qcuefi_get_and_set_variable: data: ",
 		       DUMP_PREFIX_OFFSET, 16, 1, data, data_size, true);
 
@@ -867,9 +871,9 @@ static efi_status_t _qcuefi_set_variable(struct qcom_uefi_app *qcuefi)
 
 static efi_status_t _qcuefi_dump_names_and_guid(struct qcom_uefi_app *qcuefi)
 {
-	wchar_t var_name[256] = {};
+	efi_char16_t var_name[256] = {};
 	efi_guid_t var_guid = {};
-	u64 var_size;
+	unsigned long var_size;
 	efi_status_t status;
 	int i;
 
