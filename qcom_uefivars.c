@@ -321,7 +321,377 @@ static efi_status_t qseos_uefi_status_to_efi(u32 status)
 	return category << (BITS_PER_LONG - 32) | code;
 }
 
-// NOTE: adapted from kernel, not required in final driver
+static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const wchar_t *name,
+					const efi_guid_t *guid, u32 *attributes, u64 *data_size,
+					void *data)
+{
+	struct qcom_uefi_get_variable_req *req_data;
+	struct qcom_uefi_get_variable_rsp *rsp_data;
+	struct qseos_dma dma_req;
+	struct qseos_dma dma_rsp;
+	u64 name_size = utf16_strsize(name, U32_MAX);
+	u64 buffer_size = *data_size;
+	u64 size;
+	efi_status_t efi_status;
+	int status;
+
+	/* Validation: We need a name and GUID. */
+	if (!name || !guid)
+		return EFI_INVALID_PARAMETER;
+
+	/* Validation: We need a buffer if the buffer_size is nonzero. */
+	if (buffer_size != 0 && !data)
+		return EFI_INVALID_PARAMETER;
+
+	/* Compute required size. */
+	size = sizeof(*req_data) + sizeof(*guid) + name_size;     /* Inputs.            */
+	size += sizeof(*rsp_data) + buffer_size;                  /* Outputs.           */
+	size += __alignof__(*req_data) + __alignof__(*guid);      /* Input alignments.  */
+	size += __alignof__(*rsp_data);                           /* Output alignments. */
+	size = PAGE_ALIGN(size);
+
+	/* Make sure we have enough DMA memory. */
+	status = qseos_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
+	if (status)
+		return EFI_OUT_OF_RESOURCES;
+
+	/* Align request struct. */
+	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0);
+	req_data = dma_req.virt;
+
+	/* Set up request data. */
+	req_data->command_id = TZ_UEFI_VAR_GET_VARIABLE;
+	req_data->data_size = buffer_size;
+	req_data->name_offset = sizeof(*req_data);
+	req_data->name_size = name_size;
+	req_data->guid_offset = QSEOS_DMA_ALIGN(req_data->name_offset + name_size);
+	req_data->guid_size = sizeof(*guid);
+	req_data->length = req_data->guid_offset + req_data->guid_size;
+
+	dma_req.size = req_data->length;
+
+	/* Copy request parameters. */
+	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, name_size / sizeof(wchar_t));
+	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
+
+	/* Align response struct. */
+	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
+	rsp_data = dma_rsp.virt;
+
+	/* Perform SCM call. */
+	dma_wmb();
+	status = qseos_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
+				dma_rsp.phys, dma_rsp.size);
+	dma_rmb();
+
+	/* Check for errors and validate. */
+	if (status)
+		return EFI_DEVICE_ERROR;
+
+	if (rsp_data->command_id != TZ_UEFI_VAR_GET_VARIABLE)
+		return EFI_DEVICE_ERROR;
+
+	if (rsp_data->length < sizeof(*rsp_data) || rsp_data->length > dma_rsp.size)
+		return EFI_DEVICE_ERROR;
+
+	if (rsp_data->status) {
+		dev_dbg(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
+		efi_status = qseos_uefi_status_to_efi(rsp_data->status);
+
+		/* Update size and attributes in case buffer is too small. */
+		if (efi_status == EFI_BUFFER_TOO_SMALL) {
+			*data_size = rsp_data->data_size;
+			if (attributes)
+				*attributes = rsp_data->attributes;
+		}
+
+		return efi_status;
+	}
+
+	if (rsp_data->data_offset + rsp_data->data_size > rsp_data->length)
+		return EFI_DEVICE_ERROR;
+
+	/* Set attributes and data size even if buffer is too small. */
+	*data_size = rsp_data->data_size;
+	if (attributes)
+		*attributes = rsp_data->attributes;
+
+	/*
+	 * If we have a buffer size of zero and no buffer, just return
+	 * attributes and required size.
+	 */
+	if (buffer_size == 0 && !data)
+		return EFI_SUCCESS;
+
+	/* Validate output buffer size. */
+	if (buffer_size < rsp_data->data_size)
+		return EFI_BUFFER_TOO_SMALL;
+
+	/* Copy to output buffer. Note: We're guaranteed to have one at this point.  */
+	memcpy(data, dma_rsp.virt + rsp_data->data_offset, rsp_data->data_size);
+	return EFI_SUCCESS;
+}
+
+static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const wchar_t *name,
+					const efi_guid_t *guid, u32 attributes, u64 data_size,
+					const void *data)
+{
+	struct qcom_uefi_set_variable_req *req_data;
+	struct qcom_uefi_set_variable_rsp *rsp_data;
+	struct qseos_dma dma_req;
+	struct qseos_dma dma_rsp;
+	u64 name_size = utf16_strsize(name, U32_MAX);
+	u64 size;
+	int status;
+
+	/* Validate inputs. */
+	if (!name || !guid)
+		return EFI_INVALID_PARAMETER;
+
+	/* Make sur ewe have some data if data_size is nonzero. */
+	if (data_size && !data)
+		return EFI_INVALID_PARAMETER;
+
+	/* Compute required size. */
+	size = sizeof(*req_data) + name_size + sizeof(*guid) + data_size;   /* Inputs.            */
+	size += sizeof(*rsp_data);                                          /* Outputs.           */
+	size += __alignof__(*req_data) + __alignof__(*guid);                /* Input alignments.  */
+	size += __alignof__(*rsp_data);                                     /* Output alignments. */
+	size = PAGE_ALIGN(size);
+
+	/* Make sure we have enough DMA memory. */
+	status = qseos_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
+	if (status)
+		return EFI_OUT_OF_RESOURCES;
+
+	/* Align request struct. */
+	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0);
+	req_data = dma_req.virt;
+
+	/* Set up request data. */
+	req_data->command_id = TZ_UEFI_VAR_SET_VARIABLE;
+	req_data->attributes = attributes;
+	req_data->name_offset = sizeof(*req_data);
+	req_data->name_size = name_size;
+	req_data->guid_offset = QSEOS_DMA_ALIGN(req_data->name_offset + name_size);
+	req_data->guid_size = sizeof(*guid);
+	req_data->data_offset = req_data->guid_offset + req_data->guid_size;
+	req_data->data_size = data_size;
+	req_data->length = req_data->data_offset + data_size;
+
+	/* Copy request parameters. */
+	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, req_data->name_size);
+	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
+
+	if (data_size)
+		memcpy(dma_req.virt + req_data->data_offset, data, req_data->data_size);
+
+	/* Align response struct. */
+	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
+	rsp_data = dma_rsp.virt;
+
+	/* Perform SCM call. */
+	dma_req.size = req_data->length;
+	dma_rsp.size = sizeof(*rsp_data);
+
+	dma_wmb();
+	status = qseos_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
+				dma_rsp.phys, dma_rsp.size);
+	dma_rmb();
+
+	/* Check for errors and validate. */
+	if (status)
+		return EFI_DEVICE_ERROR;
+
+	if (rsp_data->command_id != TZ_UEFI_VAR_SET_VARIABLE)
+		return EFI_DEVICE_ERROR;
+
+	if (rsp_data->length < sizeof(*rsp_data) || rsp_data->length > dma_rsp.size)
+		return EFI_DEVICE_ERROR;
+
+	if (rsp_data->status) {
+		dev_dbg(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
+		return qseos_uefi_status_to_efi(rsp_data->status);
+	}
+
+	return EFI_SUCCESS;
+}
+
+static efi_status_t qcuefi_get_next_variable_name(struct qcom_uefi_app *qcuefi, u64 *name_size,
+						  wchar_t *name, efi_guid_t *guid)
+{
+	struct qcom_uefi_get_next_variable_name_req *req_data;
+	struct qcom_uefi_get_next_variable_name_rsp *rsp_data;
+	struct qseos_dma dma_req;
+	struct qseos_dma dma_rsp;
+	efi_status_t efi_status;
+	int status;
+	u64 size;
+
+	/* We need some buffers. */
+	if (!name_size || !name || !guid)
+		return EFI_INVALID_PARAMETER;
+
+	/* There needs to be at least a single nul character. */
+	if (*name_size == 0)
+		return EFI_INVALID_PARAMETER;
+
+	/* Compute required size. */
+	size = sizeof(*req_data) + sizeof(*guid) + *name_size;    /* Inputs.            */
+	size += sizeof(*rsp_data) + sizeof(*guid) + *name_size;   /* Outputs.           */
+	size += __alignof__(*req_data) + __alignof__(*guid);      /* Input alignments.  */
+	size += __alignof__(*rsp_data);                           /* Output alignments. */
+	size = PAGE_ALIGN(size);
+
+	/* Make sure we have enough DMA memory. */
+	status = qseos_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
+	if (status)
+		return EFI_OUT_OF_RESOURCES;
+
+	/* Align request struct. */
+	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0);
+	req_data = dma_req.virt;
+
+	/* Set up request data. */
+	req_data->command_id = TZ_UEFI_VAR_GET_NEXT_VARIABLE;
+	req_data->guid_offset = QSEOS_DMA_ALIGN(sizeof(*req_data));
+	req_data->guid_size = sizeof(*guid);
+	req_data->name_offset = req_data->guid_offset + req_data->guid_size;
+	req_data->name_size = *name_size;
+	req_data->length = req_data->name_offset + req_data->name_size;
+
+	dma_req.size = req_data->length;
+
+	/* Copy request parameters. */
+	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
+	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, *name_size / sizeof(wchar_t));
+
+	/* Align response struct. */
+	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
+	rsp_data = dma_rsp.virt;
+
+	/* Perform SCM call. */
+	dma_wmb();
+	status = qseos_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
+				dma_rsp.phys, dma_rsp.size);
+	dma_rmb();
+
+	/* Check for errors and validate. */
+	if (status)
+		return EFI_DEVICE_ERROR;
+
+	if (rsp_data->command_id != TZ_UEFI_VAR_GET_NEXT_VARIABLE)
+		return EFI_DEVICE_ERROR;
+
+	if (rsp_data->length < sizeof(*rsp_data) || rsp_data->length > dma_rsp.size)
+		return EFI_DEVICE_ERROR;
+
+	if (rsp_data->status) {
+		dev_dbg(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
+		efi_status = qseos_uefi_status_to_efi(rsp_data->status);
+
+		/* Update size with required size in case buffer is too small. */
+		if (efi_status == EFI_BUFFER_TOO_SMALL)
+			*name_size = rsp_data->name_size;
+
+		return efi_status;
+	}
+
+	if (rsp_data->name_offset + rsp_data->name_size > rsp_data->length)
+		return EFI_DEVICE_ERROR;
+
+	if (rsp_data->guid_offset + rsp_data->guid_size > rsp_data->length)
+		return EFI_DEVICE_ERROR;
+
+	if (rsp_data->name_size > *name_size) {
+		*name_size = rsp_data->name_size;
+		return EFI_BUFFER_TOO_SMALL;
+	}
+
+	if (rsp_data->guid_size != sizeof(*guid))
+		return EFI_DEVICE_ERROR;
+
+	/* Copy response fields. */
+	memcpy(guid, dma_rsp.virt + rsp_data->guid_offset, rsp_data->guid_size);
+	utf16_strlcpy(name, dma_rsp.virt + rsp_data->name_offset, rsp_data->name_size / sizeof(wchar_t));
+	*name_size = rsp_data->name_size;
+
+	return 0;
+}
+
+static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32 attr,
+					       u64 *storage_space, u64 *remaining_space,
+					       u64 *max_variable_size)
+{
+	struct qcom_uefi_query_variable_info_req *req_data;
+	struct qcom_uefi_query_variable_info_rsp *rsp_data;
+	struct qseos_dma dma_req;
+	struct qseos_dma dma_rsp;
+	u64 size;
+	int status;
+
+	/* Compute required size. */
+	size = sizeof(*req_data) + sizeof(*rsp_data);
+	size += __alignof__(*req_data) + __alignof__(*rsp_data);
+	size = PAGE_ALIGN(size);
+
+	/* Make sure we have enough DMA memory. */
+	status = qseos_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
+	if (status)
+		return EFI_OUT_OF_RESOURCES;
+
+	/* Align request struct. */
+	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0);
+	req_data = dma_req.virt;
+
+	/* Set up request data. */
+	req_data->command_id = TZ_UEFI_VAR_QUERY_VARIABLE_INFO;
+	req_data->length = sizeof(*req_data);
+	req_data->attributes = attr;
+
+	/* Align response struct. */
+	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
+	rsp_data = dma_rsp.virt;
+
+	/* Perform SCM call. */
+	dma_req.size = req_data->length;
+	dma_rsp.size = sizeof(*rsp_data);
+
+	dma_wmb();
+	status = qseos_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
+				dma_rsp.phys, dma_rsp.size);
+	dma_rmb();
+
+	/* Check for errors and validate. */
+	if (status)
+		return EFI_DEVICE_ERROR;
+
+	if (rsp_data->command_id != TZ_UEFI_VAR_QUERY_VARIABLE_INFO)
+		return EFI_DEVICE_ERROR;
+
+	if (rsp_data->length < sizeof(*rsp_data) || rsp_data->length > dma_rsp.size)
+		return EFI_DEVICE_ERROR;
+
+	if (rsp_data->status) {
+		dev_dbg(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
+		return qseos_uefi_status_to_efi(rsp_data->status);
+	}
+
+	if (storage_space)
+		*storage_space = rsp_data->storage_space;
+
+	if (remaining_space)
+		*remaining_space = rsp_data->remaining_space;
+
+	if (max_variable_size)
+		*max_variable_size = rsp_data->max_variable_size;
+
+	return EFI_SUCCESS;
+}
+
+
+/* -- TEMPORARY test stuf. -------------------------------------------------- */
+
 int __efi_status_to_err(efi_status_t status)
 {
 	int err;
@@ -361,386 +731,17 @@ int __efi_status_to_err(efi_status_t status)
 	return err;
 }
 
-static int qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const wchar_t *name,
-			       const efi_guid_t *guid, u32 *attributes, u64 *data_size, void *data)
+static efi_status_t _qcuefi_query_and_print_variable_info(struct qcom_uefi_app *qcuefi)
 {
-	struct qcom_uefi_get_variable_req *req_data;
-	struct qcom_uefi_get_variable_rsp *rsp_data;
-	struct qseos_dma dma_req;
-	struct qseos_dma dma_rsp;
-	u64 name_size = utf16_strsize(name, U32_MAX);
-	u64 buffer_size = *data_size;
-	u64 size;
-	efi_status_t efi_status;
-	int status;
-
-	/* Validation: We need a name and GUID. */
-	if (!name || !guid)
-		return -EINVAL;
-
-	/* Validation: We need a buffer if the buffer_size is nonzero. */
-	if (buffer_size != 0 && !data)
-		return -EINVAL;
-
-	/* Compute required size. */
-	size = sizeof(*req_data) + sizeof(*guid) + name_size;     /* Inputs.            */
-	size += sizeof(*rsp_data) + buffer_size;                  /* Outputs.           */
-	size += __alignof__(*req_data) + __alignof__(*guid);      /* Input alignments.  */
-	size += __alignof__(*rsp_data);                           /* Output alignments. */
-	size = PAGE_ALIGN(size);
-
-	/* Make sure we have enough DMA memory. */
-	status = qseos_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
-	if (status)
-		return status;
-
-	/* Align request struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0);
-	req_data = dma_req.virt;
-
-	/* Set up request data. */
-	req_data->command_id = TZ_UEFI_VAR_GET_VARIABLE;
-	req_data->data_size = buffer_size;
-	req_data->name_offset = sizeof(*req_data);
-	req_data->name_size = name_size;
-	req_data->guid_offset = QSEOS_DMA_ALIGN(req_data->name_offset + name_size);
-	req_data->guid_size = sizeof(*guid);
-	req_data->length = req_data->guid_offset + req_data->guid_size;
-
-	dma_req.size = req_data->length;
-
-	/* Copy request parameters. */
-	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, name_size / sizeof(wchar_t));
-	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
-
-	/* Align response struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
-	rsp_data = dma_rsp.virt;
-
-	/* Perform SCM call. */
-	dma_wmb();
-	status = qseos_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
-				dma_rsp.phys, dma_rsp.size);
-	dma_rmb();
-
-	/* Check for errors and validate. */
-	if (status)
-		return status;
-
-	if (rsp_data->command_id != TZ_UEFI_VAR_GET_VARIABLE)
-		return -EPROTO;
-
-	if (rsp_data->length < sizeof(*rsp_data) || rsp_data->length > dma_rsp.size)
-		return -EPROTO;
-
-	if (rsp_data->status) {
-		dev_dbg(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
-		efi_status = qseos_uefi_status_to_efi(rsp_data->status);
-
-		/* Update size and attributes in case buffer is too small. */
-		if (efi_status == EFI_BUFFER_TOO_SMALL) {
-			*data_size = rsp_data->data_size;
-			if (attributes)
-				*attributes = rsp_data->attributes;
-		}
-
-		return __efi_status_to_err(efi_status);
-	}
-
-	if (rsp_data->data_offset + rsp_data->data_size > rsp_data->length)
-		return -EPROTO;
-
-	/* Set attributes and data size even if buffer is too small. */
-	*data_size = rsp_data->data_size;
-	if (attributes)
-		*attributes = rsp_data->attributes;
-
-	/*
-	 * If we have a buffer size of zero and no buffer, just return
-	 * attributes and required size.
-	 */
-	if (buffer_size == 0 && !data)
-		return 0;
-
-	/* Validate output buffer size. */
-	if (buffer_size < rsp_data->data_size)
-		return -E2BIG;
-
-	/* Copy to output buffer. Note: We're guaranteed to have one at this point.  */
-	memcpy(data, dma_rsp.virt + rsp_data->data_offset, rsp_data->data_size);
-	return 0;
-}
-
-static int qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const wchar_t *name,
-			       const efi_guid_t *guid, u32 attributes, u64 data_size,
-			       const void *data)
-{
-	struct qcom_uefi_set_variable_req *req_data;
-	struct qcom_uefi_set_variable_rsp *rsp_data;
-	struct qseos_dma dma_req;
-	struct qseos_dma dma_rsp;
-	u64 name_size = utf16_strsize(name, U32_MAX);
-	u64 size;
-	int status;
-
-	/* Validate inputs. */
-	if (!name || !guid)
-		return -EINVAL;
-
-	/* Make sur ewe have some data if data_size is nonzero. */
-	if (data_size && !data)
-		return -EINVAL;
-
-	/* Compute required size. */
-	size = sizeof(*req_data) + name_size + sizeof(*guid) + data_size;   /* Inputs.            */
-	size += sizeof(*rsp_data);                                          /* Outputs.           */
-	size += __alignof__(*req_data) + __alignof__(*guid);                /* Input alignments.  */
-	size += __alignof__(*rsp_data);                                     /* Output alignments. */
-	size = PAGE_ALIGN(size);
-
-	/* Make sure we have enough DMA memory. */
-	status = qseos_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
-	if (status)
-		return status;
-
-	/* Align request struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0);
-	req_data = dma_req.virt;
-
-	/* Set up request data. */
-	req_data->command_id = TZ_UEFI_VAR_SET_VARIABLE;
-	req_data->attributes = attributes;
-	req_data->name_offset = sizeof(*req_data);
-	req_data->name_size = name_size;
-	req_data->guid_offset = QSEOS_DMA_ALIGN(req_data->name_offset + name_size);
-	req_data->guid_size = sizeof(*guid);
-	req_data->data_offset = req_data->guid_offset + req_data->guid_size;
-	req_data->data_size = data_size;
-	req_data->length = req_data->data_offset + data_size;
-
-	/* Copy request parameters. */
-	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, req_data->name_size);
-	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
-
-	if (data_size)
-		memcpy(dma_req.virt + req_data->data_offset, data, req_data->data_size);
-
-	/* Align response struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
-	rsp_data = dma_rsp.virt;
-
-	/* Perform SCM call. */
-	dma_req.size = req_data->length;
-	dma_rsp.size = sizeof(*rsp_data);
-
-	dma_wmb();
-	status = qseos_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
-				dma_rsp.phys, dma_rsp.size);
-	dma_rmb();
-
-	/* Check for errors and validate. */
-	if (status)
-		return status;
-
-	if (rsp_data->command_id != TZ_UEFI_VAR_SET_VARIABLE)
-		return -EPROTO;
-
-	if (rsp_data->length < sizeof(*rsp_data) || rsp_data->length > dma_rsp.size)
-		return -EPROTO;
-
-	if (rsp_data->status) {
-		dev_dbg(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
-		return __efi_status_to_err(qseos_uefi_status_to_efi(rsp_data->status));
-	}
-
-	return 0;
-}
-
-static int qcuefi_get_next_variable_name(struct qcom_uefi_app *qcuefi, u64 *name_size,
-					 wchar_t *name, efi_guid_t *guid)
-{
-	struct qcom_uefi_get_next_variable_name_req *req_data;
-	struct qcom_uefi_get_next_variable_name_rsp *rsp_data;
-	struct qseos_dma dma_req;
-	struct qseos_dma dma_rsp;
-	efi_status_t efi_status;
-	int status;
-	u64 size;
-
-	/* We need some buffers. */
-	if (!name_size || !name || !guid)
-		return -EINVAL;
-
-	/* There needs to be at least a single nul character. */
-	if (*name_size == 0)
-		return -EINVAL;
-
-	/* Compute required size. */
-	size = sizeof(*req_data) + sizeof(*guid) + *name_size;    /* Inputs.            */
-	size += sizeof(*rsp_data) + sizeof(*guid) + *name_size;   /* Outputs.           */
-	size += __alignof__(*req_data) + __alignof__(*guid);      /* Input alignments.  */
-	size += __alignof__(*rsp_data);                           /* Output alignments. */
-	size = PAGE_ALIGN(size);
-
-	/* Make sure we have enough DMA memory. */
-	status = qseos_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
-	if (status)
-		return status;
-
-	/* Align request struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0);
-	req_data = dma_req.virt;
-
-	/* Set up request data. */
-	req_data->command_id = TZ_UEFI_VAR_GET_NEXT_VARIABLE;
-	req_data->guid_offset = QSEOS_DMA_ALIGN(sizeof(*req_data));
-	req_data->guid_size = sizeof(*guid);
-	req_data->name_offset = req_data->guid_offset + req_data->guid_size;
-	req_data->name_size = *name_size;
-	req_data->length = req_data->name_offset + req_data->name_size;
-
-	dma_req.size = req_data->length;
-
-	/* Copy request parameters. */
-	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
-	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, *name_size / sizeof(wchar_t));
-
-	/* Align response struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
-	rsp_data = dma_rsp.virt;
-
-	/* Perform SCM call. */
-	dma_wmb();
-	status = qseos_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
-				dma_rsp.phys, dma_rsp.size);
-	dma_rmb();
-
-	/* Check for errors and validate. */
-	if (status)
-		return status;
-
-	if (rsp_data->command_id != TZ_UEFI_VAR_GET_NEXT_VARIABLE)
-		return -EPROTO;
-
-	if (rsp_data->length < sizeof(*rsp_data) || rsp_data->length > dma_rsp.size)
-		return -EPROTO;
-
-	if (rsp_data->status) {
-		dev_dbg(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
-		efi_status = qseos_uefi_status_to_efi(rsp_data->status);
-
-		/* Update size with required size in case buffer is too small. */
-		if (efi_status == EFI_BUFFER_TOO_SMALL)
-			*name_size = rsp_data->name_size;
-
-		return __efi_status_to_err(efi_status);
-	}
-
-	if (rsp_data->name_offset + rsp_data->name_size > rsp_data->length)
-		return -EPROTO;
-
-	if (rsp_data->guid_offset + rsp_data->guid_size > rsp_data->length)
-		return -EPROTO;
-
-	if (rsp_data->name_size > *name_size) {
-		*name_size = rsp_data->name_size;
-		return -E2BIG;
-	}
-
-	if (rsp_data->guid_size != sizeof(*guid))
-		return -EPROTO;
-
-	/* Copy response fields. */
-	memcpy(guid, dma_rsp.virt + rsp_data->guid_offset, rsp_data->guid_size);
-	utf16_strlcpy(name, dma_rsp.virt + rsp_data->name_offset, rsp_data->name_size / sizeof(wchar_t));
-	*name_size = rsp_data->name_size;
-
-	return 0;
-}
-
-static int qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32 attr, u64 *storage_space,
-				      u64 *remaining_space, u64 *max_variable_size)
-{
-	struct qcom_uefi_query_variable_info_req *req_data;
-	struct qcom_uefi_query_variable_info_rsp *rsp_data;
-	struct qseos_dma dma_req;
-	struct qseos_dma dma_rsp;
-	u64 size;
-	int status;
-
-	/* Compute required size. */
-	size = sizeof(*req_data) + sizeof(*rsp_data);
-	size += __alignof__(*req_data) + __alignof__(*rsp_data);
-	size = PAGE_ALIGN(size);
-
-	/* Make sure we have enough DMA memory. */
-	status = qseos_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
-	if (status)
-		return status;
-
-	/* Align request struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0);
-	req_data = dma_req.virt;
-
-	/* Set up request data. */
-	req_data->command_id = TZ_UEFI_VAR_QUERY_VARIABLE_INFO;
-	req_data->length = sizeof(*req_data);
-	req_data->attributes = attr;
-
-	/* Align response struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
-	rsp_data = dma_rsp.virt;
-
-	/* Perform SCM call. */
-	dma_req.size = req_data->length;
-	dma_rsp.size = sizeof(*rsp_data);
-
-	dma_wmb();
-	status = qseos_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
-				dma_rsp.phys, dma_rsp.size);
-	dma_rmb();
-
-	/* Check for errors and validate. */
-	if (status)
-		return status;
-
-	if (rsp_data->command_id != TZ_UEFI_VAR_QUERY_VARIABLE_INFO)
-		return -EPROTO;
-
-	if (rsp_data->length < sizeof(*rsp_data) || rsp_data->length > dma_rsp.size)
-		return -EPROTO;
-
-	if (rsp_data->status) {
-		dev_dbg(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
-		return __efi_status_to_err(qseos_uefi_status_to_efi(rsp_data->status));
-	}
-
-	if (storage_space)
-		*storage_space = rsp_data->storage_space;
-
-	if (remaining_space)
-		*remaining_space = rsp_data->remaining_space;
-
-	if (max_variable_size)
-		*max_variable_size = rsp_data->max_variable_size;
-
-	return 0;
-}
-
-
-/* -- TEMPORARY test stuf. -------------------------------------------------- */
-
-static int _qcuefi_query_and_print_variable_info(struct qcom_uefi_app *qcuefi)
-{
-	int status;
+	efi_status_t status;
 	u32 attrs = EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS | EFI_VARIABLE_NON_VOLATILE;
 	u64 storage_space;
 	u64 remaining_space;
 	u64 max_variable_size;
 
 	status = qcuefi_query_variable_info(qcuefi, attrs, &storage_space, &remaining_space, &max_variable_size);
-	if (status) {
-		dev_err(qcuefi->dev, "%s: error: %d\n", __func__, status);
+	if (status != EFI_SUCCESS) {
+		dev_err(qcuefi->dev, "%s: error: %lx\n", __func__, status);
 		return status;
 	}
 
@@ -749,39 +750,40 @@ static int _qcuefi_query_and_print_variable_info(struct qcom_uefi_app *qcuefi)
 	dev_info(qcuefi->dev, "%s: remaining_space=0x%llx\n", __func__, remaining_space);
 	dev_info(qcuefi->dev, "%s: max_variable_size=0x%llx\n", __func__, max_variable_size);
 
-	return 0;
+	return EFI_SUCCESS;
 }
 
-static int _qcuefi_get_and_print_next(struct qcom_uefi_app *qcuefi, u64 *name_size,
-				      wchar_t* name, efi_guid_t* guid)
+static efi_status_t _qcuefi_get_and_print_next(struct qcom_uefi_app *qcuefi, u64 *name_size,
+					       wchar_t* name, efi_guid_t* guid)
 {
 	char name_u8[256] = {};
-	int status;
+	efi_status_t status;
 
 	status = qcuefi_get_next_variable_name(qcuefi, name_size, name, guid);
-	if (status) {
-		dev_err(qcuefi->dev, "%s: failed to read variable: status=%d\n", __func__, status);
+	if (status != EFI_SUCCESS) {
+		dev_err(qcuefi->dev, "%s: failed to read variable: status=0x%lx\n",
+			__func__, status);
 		return status;
 	}
 
 	utf16s_to_utf8s(name, *name_size, UTF16_LITTLE_ENDIAN, name_u8, ARRAY_SIZE(name_u8) - 1);
 	dev_info(qcuefi->dev, "%s: name=%s, guid=%pUL\n", __func__, name_u8, guid);
 
-	return 0;
+	return EFI_SUCCESS;
 }
 
-static int _qcuefi_get_and_dump_variable(struct qcom_uefi_app *qcuefi, const wchar_t *name,
-					 const efi_guid_t *guid)
+static efi_status_t _qcuefi_get_and_dump_variable(struct qcom_uefi_app *qcuefi, const wchar_t *name,
+						  const efi_guid_t *guid)
 {
 	char name_u8[256] = {};
 	u8 data[512] = {};
 	u64 size = ARRAY_SIZE(data);
 	u32 attrs = 0;
-	int status;
+	efi_status_t status;
 
 	status = qcuefi_get_variable(qcuefi, name, guid, &attrs, &size, data);
-	if (status) {
-		dev_err(qcuefi->dev, "failed, to get variable: %d\n", status);
+	if (status != EFI_SUCCESS) {
+		dev_err(qcuefi->dev, "failed, to get variable: 0x%lx\n", status);
 		return status;
 	}
 
@@ -790,20 +792,21 @@ static int _qcuefi_get_and_dump_variable(struct qcom_uefi_app *qcuefi, const wch
 	dev_info(qcuefi->dev, "%s: name=%s, guid=%pUL, attrs=0x%x\n", __func__, name_u8, guid, attrs);
 	print_hex_dump(KERN_INFO, "qcom_uefivars qcom_uefivars: _qcuefi_get_and_dump_variable: data: ",
 		       DUMP_PREFIX_OFFSET, 16, 1, data, size, true);
-	return 0;
+
+	return EFI_SUCCESS;
 }
 
-static int _qcuefi_dump_variables(struct qcom_uefi_app *qcuefi)
+static efi_status_t _qcuefi_dump_variables(struct qcom_uefi_app *qcuefi)
 {
 	_qcuefi_get_and_dump_variable(qcuefi, L"SecureBoot", &EFI_GLOBAL_VARIABLE_GUID);
 	_qcuefi_get_and_dump_variable(qcuefi, L"SetupMode", &EFI_GLOBAL_VARIABLE_GUID);
 	_qcuefi_get_and_dump_variable(qcuefi, L"Lang", &EFI_GLOBAL_VARIABLE_GUID);
 	_qcuefi_get_and_dump_variable(qcuefi, L"PlatformLang", &EFI_GLOBAL_VARIABLE_GUID);
 
-	return 0;
+	return EFI_SUCCESS;
 }
 
-static int _qcuefi_set_variable(struct qcom_uefi_app *qcuefi)
+static efi_status_t _qcuefi_set_variable(struct qcom_uefi_app *qcuefi)
 {
 	const char *name_u8 = "ThisIsATest";
 	const wchar_t *name = L"ThisIsATest";
@@ -817,27 +820,27 @@ static int _qcuefi_set_variable(struct qcom_uefi_app *qcuefi)
 	u64 new_data_size = strlen(new_data) + 1;
 	u32 new_attrs = 7;
 
-	int status;
+	efi_status_t status;
 
 	/* Try to get the variable, it shouldn't exist yet. */
 	status = qcuefi_get_variable(qcuefi, name, guid, &attrs, &data_size, data);
-	if (status != -ENOENT) {
-		dev_err(qcuefi->dev, "failed, to get variable: %d\n", status);
-		return -EFAULT;
+	if (status != EFI_NOT_FOUND) {
+		dev_err(qcuefi->dev, "failed, to get variable: 0x%lx\n", status);
+		return EFI_ABORTED;
 	}
 
 	/* Create/set the variable. */
 	status = qcuefi_set_variable(qcuefi, name, guid, new_attrs, new_data_size, new_data);
-	if (status) {
-		dev_err(qcuefi->dev, "failed, to set variable: %d\n", status);
+	if (status != EFI_SUCCESS) {
+		dev_err(qcuefi->dev, "failed, to set variable: 0x%lx\n", status);
 		return status;
 	}
 
 	/* Read it back. */
 	data_size = ARRAY_SIZE(data);
 	status = qcuefi_get_variable(qcuefi, name, guid, &attrs, &data_size, data);
-	if (status) {
-		dev_err(qcuefi->dev, "failed, to get variable: %d\n", status);
+	if (status != EFI_SUCCESS) {
+		dev_err(qcuefi->dev, "failed, to get variable: 0x%lx\n", status);
 		return status;
 	}
 
@@ -847,63 +850,69 @@ static int _qcuefi_set_variable(struct qcom_uefi_app *qcuefi)
 
 	/* Delete it. */
 	status = qcuefi_set_variable(qcuefi, name, guid, 0, 0, NULL);
-	if (status) {
-		dev_err(qcuefi->dev, "failed, to set variable: %d\n", status);
+	if (status != EFI_SUCCESS) {
+		dev_err(qcuefi->dev, "failed, to set variable: 0x%lx\n", status);
 		return status;
 	}
 
 	/* Read it back again, it shouldn't exist any more. */
 	status = qcuefi_get_variable(qcuefi, name, guid, &attrs, &data_size, data);
-	if (status != -ENOENT) {
-		dev_err(qcuefi->dev, "failed, to get variable: %d\n", status);
-		return -EFAULT;
+	if (status != EFI_NOT_FOUND) {
+		dev_err(qcuefi->dev, "failed, to get variable: 0x%lx\n", status);
+		return EFI_ABORTED;
 	}
 
-	return 0;
+	return EFI_SUCCESS;
 }
 
-static int _qcuefi_dump_names_and_guid(struct qcom_uefi_app *qcuefi)
+static efi_status_t _qcuefi_dump_names_and_guid(struct qcom_uefi_app *qcuefi)
 {
 	wchar_t var_name[256] = {};
 	efi_guid_t var_guid = {};
 	u64 var_size;
-	int status, i;
+	efi_status_t status;
+	int i;
 
 	for (i = 0; i < 100; i++) {
 		var_size = ARRAY_SIZE(var_name) * sizeof(var_name[0]);
 		status = _qcuefi_get_and_print_next(qcuefi, &var_size, var_name, &var_guid);
-		if (status == -ENOENT) {
+		if (status == EFI_NOT_FOUND) {
 			dev_info(qcuefi->dev, "end of variables reached\n");
 			break;
 		}
-		if (status)
+		if (status != EFI_SUCCESS)
 			return status;
 	}
 
-	return 0;
+	return EFI_SUCCESS;
+}
+
+static efi_status_t ___qcuefi_test(struct qcom_uefi_app *qcuefi)
+{
+	efi_status_t status;
+
+	status = _qcuefi_query_and_print_variable_info(qcuefi);
+	if (status != EFI_SUCCESS)
+		return status;
+
+	status = _qcuefi_dump_names_and_guid(qcuefi);
+	if (status != EFI_SUCCESS)
+		return status;
+
+	status = _qcuefi_dump_variables(qcuefi);
+	if (status != EFI_SUCCESS)
+		return status;
+
+	status = _qcuefi_set_variable(qcuefi);
+	if (status != EFI_SUCCESS)
+		return status;
+
+	return EFI_SUCCESS;
 }
 
 static int _qcuefi_test(struct qcom_uefi_app *qcuefi)
 {
-	int status;
-
-	status = _qcuefi_query_and_print_variable_info(qcuefi);
-	if (status)
-		return status;
-
-	status = _qcuefi_dump_names_and_guid(qcuefi);
-	if (status)
-		return status;
-
-	status = _qcuefi_dump_variables(qcuefi);
-	if (status)
-		return status;
-
-	status = _qcuefi_set_variable(qcuefi);
-	if (status)
-		return status;
-
-	return 0;
+	return __efi_status_to_err(___qcuefi_test(qcuefi));
 }
 
 
