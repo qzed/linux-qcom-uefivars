@@ -279,7 +279,7 @@ struct qcom_uefi_set_variable_rsp {
 	u32 _unknown2;
 } __packed;
 
-struct qcom_uefi_get_next_variable_name_req {
+struct qcom_uefi_get_next_variable_req {
 	u32 command_id;
 	u32 length;
 	u32 guid_offset;
@@ -288,7 +288,7 @@ struct qcom_uefi_get_next_variable_name_req {
 	u32 name_size;		/* Size of full buffer in bytes with nul-terminator. */
 } __packed;
 
-struct qcom_uefi_get_next_variable_name_rsp {
+struct qcom_uefi_get_next_variable_rsp {
 	u32 command_id;
 	u32 length;
 	u32 status;
@@ -518,12 +518,11 @@ static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_
 	return EFI_SUCCESS;
 }
 
-static efi_status_t qcuefi_get_next_variable_name(struct qcom_uefi_app *qcuefi,
-						  unsigned long *name_size, efi_char16_t *name,
-						  efi_guid_t *guid)
+static efi_status_t qcuefi_get_next_variable(struct qcom_uefi_app *qcuefi, unsigned long *name_size,
+					     efi_char16_t *name, efi_guid_t *guid)
 {
-	struct qcom_uefi_get_next_variable_name_req *req_data;
-	struct qcom_uefi_get_next_variable_name_rsp *rsp_data;
+	struct qcom_uefi_get_next_variable_req *req_data;
+	struct qcom_uefi_get_next_variable_rsp *rsp_data;
 	struct qseos_dma dma_req;
 	struct qseos_dma dma_rsp;
 	unsigned long size;
@@ -763,7 +762,7 @@ static efi_status_t _qcuefi_get_and_print_next(struct qcom_uefi_app *qcuefi,
 	char name_u8[256] = {};
 	efi_status_t status;
 
-	status = qcuefi_get_next_variable_name(qcuefi, name_size, name, guid);
+	status = qcuefi_get_next_variable(qcuefi, name_size, name, guid);
 	if (status != EFI_SUCCESS) {
 		dev_err(qcuefi->dev, "%s: failed to read variable: status=0x%lx\n",
 			__func__, status);
