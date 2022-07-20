@@ -800,6 +800,65 @@ static int _qcuefi_dump_variables(struct qcom_uefi_app *qcuefi)
 	return 0;
 }
 
+static int _qcuefi_set_variable(struct qcom_uefi_app *qcuefi)
+{
+	const char *name_u8 = "ThisIsATest";
+	const wchar_t *name = L"ThisIsATest";
+	const efi_guid_t *guid = &EFI_GLOBAL_VARIABLE_GUID;
+
+	char data[64] = {};
+	u64 data_size;
+	u32 attrs;
+
+	char *new_data = "testing123";
+	u64 new_data_size = strlen(new_data) + 1;
+	u32 new_attrs = 7;
+
+	int status;
+
+	/* Try to get the variable, it shouldn't exist yet. */
+	status = qcuefi_get_variable(qcuefi, name, guid, &attrs, &data_size, data);
+	if (status != -ENOENT) {
+		dev_err(qcuefi->dev, "failed, to get variable: %d\n", status);
+		return -EFAULT;
+	}
+
+	/* Create/set the variable. */
+	status = qcuefi_set_variable(qcuefi, name, guid, new_attrs, new_data_size, new_data);
+	if (status) {
+		dev_err(qcuefi->dev, "failed, to set variable: %d\n", status);
+		return status;
+	}
+
+	/* Read it back. */
+	data_size = ARRAY_SIZE(data);
+	status = qcuefi_get_variable(qcuefi, name, guid, &attrs, &data_size, data);
+	if (status) {
+		dev_err(qcuefi->dev, "failed, to get variable: %d\n", status);
+		return status;
+	}
+
+	dev_info(qcuefi->dev, "%s: name=%s, guid=%pUL, attrs=0x%x, size=%llx\n", __func__, name_u8, guid, attrs, data_size);
+	print_hex_dump(KERN_INFO, "qcom_uefivars qcom_uefivars: _qcuefi_get_and_set_variable: data: ",
+		       DUMP_PREFIX_OFFSET, 16, 1, data, data_size, true);
+
+	/* Delete it. */
+	status = qcuefi_set_variable(qcuefi, name, guid, 0, 0, NULL);
+	if (status) {
+		dev_err(qcuefi->dev, "failed, to set variable: %d\n", status);
+		return status;
+	}
+
+	/* Read it back again, it shouldn't exist any more. */
+	status = qcuefi_get_variable(qcuefi, name, guid, &attrs, &data_size, data);
+	if (status != -ENOENT) {
+		dev_err(qcuefi->dev, "failed, to get variable: %d\n", status);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
 static int _qcuefi_dump_names_and_guid(struct qcom_uefi_app *qcuefi)
 {
 	wchar_t var_name[256] = {};
@@ -834,6 +893,10 @@ static int _qcuefi_test(struct qcom_uefi_app *qcuefi)
 		return status;
 
 	status = _qcuefi_dump_variables(qcuefi);
+	if (status)
+		return status;
+
+	status = _qcuefi_set_variable(qcuefi);
 	if (status)
 		return status;
 
