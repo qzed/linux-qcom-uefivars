@@ -139,7 +139,7 @@ static int qseos_syscall(struct device *dev, const struct qcom_scm_desc *desc, s
 		res->resp_type, res->data);
 
 	if (status) {
-		dev_err(dev, "qcom_scm_call failed with errro %d\n", status);
+		dev_err(dev, "qcom_scm_call failed with error %d\n", status);
 		return status;
 	}
 
