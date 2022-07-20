@@ -368,15 +368,32 @@ out:
 	return status;
 }
 
+static int _get_and_print_next(struct device *dev, u32 app_id, u64 *name_size,
+			       wchar_t* name, efi_guid_t* guid)
+{
+	char name_u8[256] = {};
+	int status;
+
+	status = qseos_uefi_get_next_variable_name(dev, app_id, name_size, name, guid);
+	if (status) {
+		dev_err(dev, "%s: failed to read variable: status=%d\n", __func__, status);
+		return status;
+	}
+
+	utf16s_to_utf8s(name, *name_size, UTF16_LITTLE_ENDIAN, name_u8, ARRAY_SIZE(name_u8) - 1);
+	dev_info(dev, "%s: name=%s, guid=%pUL\n", __func__, name_u8, guid);
+
+	return 0;
+}
+
 static int qcom_uefivars_probe(struct platform_device *pdev)
 {
 	const char *app_name = "qcom.tz.uefisecapp";
 	u32 app_id = U32_MAX;
-	efi_guid_t var_guid = {};
 	wchar_t var_name[256] = {};
-	char var_name_u8[256] = {};
-	u64 var_size = ARRAY_SIZE(var_name) * sizeof(var_name[0]);
-	int status;
+	efi_guid_t var_guid = {};
+	u64 var_size;
+	int status, i;
 
 	dev_info(&pdev->dev, "%s\n", __func__);
 
@@ -389,13 +406,16 @@ static int qcom_uefivars_probe(struct platform_device *pdev)
 	if (status)
 		return status;
 
-	status = qseos_uefi_get_next_variable_name(&pdev->dev, app_id, &var_size,
-						   var_name, &var_guid);
-	if (status)
-		return status;
-	
-	utf16s_to_utf8s(var_name, var_size, UTF16_LITTLE_ENDIAN, var_name_u8, ARRAY_SIZE(var_name_u8) - 1);
-	dev_info(&pdev->dev, "%s: name=%s, guid=%pUL\n", __func__, var_name_u8, &var_guid);
+	for (i = 0; i < 5; i++) {
+		var_size = ARRAY_SIZE(var_name) * sizeof(var_name[0]);
+		status = _get_and_print_next(&pdev->dev, app_id, &var_size, var_name, &var_guid);
+		if (status == -ENOENT) {
+			dev_info(&pdev->dev, "end of variables reached\n");
+			break;
+		}
+		if (status)
+			return status;
+	}
 
 	return 0;
 }
