@@ -378,6 +378,12 @@ static int qcuefi_get_next_variable_name(struct qcom_uefi_app *qcuefi, u64 *name
 	if (status)
 		return status;
 
+	if (rsp_data->command_id != TZ_UEFI_VAR_GET_NEXT_VARIABLE)
+		return -EPROTO;
+
+	if (rsp_data->length < sizeof(*rsp_data) || rsp_data->length > dma_rsp.size)
+		return -EPROTO;
+
 	if (rsp_data->status) {
 		dev_dbg(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
 		efi_status = qseos_uefi_status_to_efi(rsp_data->status);
@@ -388,6 +394,12 @@ static int qcuefi_get_next_variable_name(struct qcom_uefi_app *qcuefi, u64 *name
 
 		return __efi_status_to_err(efi_status);
 	}
+
+	if (rsp_data->name_offset + rsp_data->name_size > rsp_data->length)
+		return -EPROTO;
+
+	if (rsp_data->guid_offset + rsp_data->guid_size > rsp_data->length)
+		return -EPROTO;
 
 	if (rsp_data->name_size > *name_size) {
 		*name_size = rsp_data->name_size;
@@ -451,6 +463,12 @@ static int qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32 attr, u6
 	if (status)
 		return status;
 
+	if (rsp_data->command_id != TZ_UEFI_VAR_QUERY_VARIABLE_INFO)
+		return -EPROTO;
+
+	if (rsp_data->length < sizeof(*rsp_data) || rsp_data->length > dma_rsp.size)
+		return -EPROTO;
+
 	if (rsp_data->status) {
 		dev_dbg(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
 		return __efi_status_to_err(qseos_uefi_status_to_efi(rsp_data->status));
@@ -481,7 +499,7 @@ static int _qcuefi_query_and_print_variable_info(struct qcom_uefi_app *qcuefi)
 		dev_err(qcuefi->dev, "%s: error: %d\n", __func__, status);
 		return status;
 	}
-	
+
 	dev_info(qcuefi->dev, "%s: attrs=0x%x\n", __func__, attrs);
 	dev_info(qcuefi->dev, "%s: storage_space=0x%llx\n", __func__, storage_space);
 	dev_info(qcuefi->dev, "%s: remaining_space=0x%llx\n", __func__, remaining_space);
