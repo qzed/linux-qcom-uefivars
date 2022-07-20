@@ -315,7 +315,7 @@ int __efi_status_to_err(efi_status_t status)
 }
 
 static int qcuefi_get_next_variable_name(struct qcom_uefi_app *qcuefi, u64 *name_size,
-					 wchar_t* name, efi_guid_t* guid)
+					 wchar_t *name, efi_guid_t *guid)
 {
 	struct qcom_uefi_get_next_variable_name_req *req_data;
 	struct qcom_uefi_get_next_variable_name_rsp *rsp_data;
