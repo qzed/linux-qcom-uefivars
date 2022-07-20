@@ -119,9 +119,9 @@ static int qseos_syscall(struct device *dev, const struct qcom_scm_desc *desc, s
 
 	status = __qseos_syscall(desc, res);
 
-	dev_info(dev, "%s: owner=%x, svc=%x, cmd=%x, status=%lld, type=%llx, data=%llx",
-		 __func__, desc->owner, desc->svc, desc->cmd, res->status,
-		 res->resp_type, res->data);
+	dev_dbg(dev, "%s: owner=%x, svc=%x, cmd=%x, status=%lld, type=%llx, data=%llx",
+		__func__, desc->owner, desc->svc, desc->cmd, res->status,
+		res->resp_type, res->data);
 
 	if (status) {
 		dev_err(dev, "qcom_scm_call failed with errro %d\n", status);
