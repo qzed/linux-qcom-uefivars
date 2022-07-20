@@ -55,15 +55,20 @@ static void qseos_dma_aligned(const struct qseos_dma *base, struct qseos_dma *ou
 
 /* -- UTF-16 helpers. ------------------------------------------------------- */
 
-static u64 utf16_strnlen(const wchar_t* str, u64 max)
+static size_t utf16_strnlen(const wchar_t* str, u64 max)
 {
-	u64 i;
+	size_t i;
 
 	for (i = 0; *str != 0 && i < max; i++, str++) {
 		/* Do nothing, all is handled in the for statement. */
 	}
 
 	return i;
+}
+
+static size_t utf16_strsize(const wchar_t* str, u64 max)
+{
+	return (utf16_strnlen(str, max) + 1) * sizeof(str[0]);
 }
 
 static size_t utf16_strlcpy(wchar_t *dst, const wchar_t *src, size_t size)
@@ -337,7 +342,7 @@ int __efi_status_to_err(efi_status_t status)
 static int qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const wchar_t *name,
 			       const efi_guid_t *guid, u32 *attributes, u64 *data_size, void *data)
 {
-	u64 name_size = (utf16_strnlen(name, U64_MAX) + 1) * sizeof(wchar_t);
+	u64 name_size = utf16_strsize(name, U32_MAX);
 	struct qcom_uefi_get_variable_req *req_data;
 	struct qcom_uefi_get_variable_rsp *rsp_data;
 	struct qseos_dma dma_req;
