@@ -14,6 +14,8 @@
 
 /* -- DMA helpers. ---------------------------------------------------------- */
 
+#define QSEOS_DMA_ALIGN(ptr)	ALIGN(ptr, 8)
+
 struct qseos_dma {
 	unsigned long size;
 	void *virt;
@@ -45,9 +47,9 @@ static int qseos_dma_realloc(struct device *dev, struct qseos_dma *dma, u64 size
 }
 
 static void qseos_dma_aligned(const struct qseos_dma *base, struct qseos_dma *out,
-			      u64 offset, u64 align)
+			      u64 offset)
 {
-	out->virt = (void *)ALIGN((uintptr_t)base->virt + offset, align);
+	out->virt = (void *)QSEOS_DMA_ALIGN((uintptr_t)base->virt + offset);
 	out->phys = base->phys + (out->virt - base->virt);
 	out->size = base->size - (out->virt - base->virt);
 }
@@ -373,7 +375,7 @@ static int qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const wchar_t *name
 		return status;
 
 	/* Align request struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0, __alignof__(*req_data));
+	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0);
 	req_data = dma_req.virt;
 
 	/* Set up request data. */
@@ -381,7 +383,7 @@ static int qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const wchar_t *name
 	req_data->data_size = buffer_size;
 	req_data->name_offset = sizeof(*req_data);
 	req_data->name_size = name_size;
-	req_data->guid_offset = ALIGN(req_data->name_offset + name_size, __alignof__(*guid));
+	req_data->guid_offset = QSEOS_DMA_ALIGN(req_data->name_offset + name_size);
 	req_data->guid_size = sizeof(*guid);
 	req_data->length = req_data->guid_offset + req_data->guid_size;
 
@@ -392,7 +394,7 @@ static int qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const wchar_t *name
 	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
 
 	/* Align response struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length, __alignof__(*rsp_data));
+	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
 	rsp_data = dma_rsp.virt;
 
 	/* Perform SCM call. */
@@ -481,12 +483,12 @@ static int qcuefi_get_next_variable_name(struct qcom_uefi_app *qcuefi, u64 *name
 		return status;
 
 	/* Align request struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0, __alignof__(*req_data));
+	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0);
 	req_data = dma_req.virt;
 
 	/* Set up request data. */
 	req_data->command_id = TZ_UEFI_VAR_GET_NEXT_VARIABLE;
-	req_data->guid_offset = ALIGN(sizeof(*req_data), __alignof__(*guid));
+	req_data->guid_offset = QSEOS_DMA_ALIGN(sizeof(*req_data));
 	req_data->guid_size = sizeof(*guid);
 	req_data->name_offset = req_data->guid_offset + req_data->guid_size;
 	req_data->name_size = *name_size;
@@ -499,7 +501,7 @@ static int qcuefi_get_next_variable_name(struct qcom_uefi_app *qcuefi, u64 *name
 	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, *name_size / sizeof(wchar_t));
 
 	/* Align response struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length, __alignof__(*rsp_data));
+	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
 	rsp_data = dma_rsp.virt;
 
 	/* Perform SCM call. */
@@ -572,7 +574,7 @@ static int qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32 attr, u6
 		return status;
 
 	/* Align request struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0, __alignof__(*req_data));
+	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0);
 	req_data = dma_req.virt;
 
 	/* Set up request data. */
@@ -581,7 +583,7 @@ static int qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32 attr, u6
 	req_data->attributes = attr;
 
 	/* Align response struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length, __alignof__(*rsp_data));
+	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
 	rsp_data = dma_rsp.virt;
 
 	/* Perform SCM call. */
