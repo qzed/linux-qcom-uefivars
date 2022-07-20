@@ -250,6 +250,22 @@ struct qcom_uefi_get_next_variable_name_rsp {
 	u32 name_size;		/* Size in bytes with nul-terminator. */
 } __packed;
 
+struct qcom_uefi_query_variable_info_req {
+	u32 command_id;
+	u32 length;
+	u32 attributes;
+} __packed;
+
+struct qcom_uefi_query_variable_info_rsp {
+	u32 command_id;
+	u32 length;
+	u32 status;
+	u32 _pad;
+	u64 storage_space;
+	u64 remaining_space;
+	u64 max_variable_size;
+} __packed;
+
 static efi_status_t qseos_uefi_status_to_efi(u32 status)
 {
 	u64 category = status & 0xf0000000;
@@ -378,6 +394,86 @@ static int qcuefi_get_next_variable_name(struct qcom_uefi_app *qcuefi, u64 *name
 	return 0;
 }
 
+static int qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32 attr, u64 *storage_space,
+				      u64 *remaining_space, u64 *max_variable_size)
+{
+	struct qcom_uefi_query_variable_info_req *req_data;
+	struct qcom_uefi_query_variable_info_rsp *rsp_data;
+	struct qseos_dma dma_req;
+	struct qseos_dma dma_rsp;
+	int status;
+	u64 size;
+
+	/* Compute required size. */
+	size = sizeof(*req_data) + sizeof(*rsp_data);
+	size += __alignof__(*req_data) + __alignof__(*rsp_data);
+	size = PAGE_ALIGN(size);
+
+	/* Make sure we have enough DMA memory. */
+	status = qseos_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
+	if (status)
+		return status;
+
+	/* Align request struct. */
+	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0, __alignof__(*req_data));
+	req_data = dma_req.virt;
+
+	/* Set up request data. */
+	req_data->command_id = TZ_UEFI_VAR_QUERY_VARIABLE_INFO;
+	req_data->length = sizeof(*req_data);
+	req_data->attributes = attr;
+
+	/* Align response struct. */
+	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length, __alignof__(*rsp_data));
+	rsp_data = dma_rsp.virt;
+
+	/* Perform SCM call. */
+	dma_req.size = req_data->length;
+	dma_rsp.size = sizeof(*rsp_data);
+
+	dma_wmb();
+	status = qseos_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
+				dma_rsp.phys, dma_rsp.size);
+	dma_rmb();
+
+	/* Check for errors and validate. */
+	if (status)
+		return status;
+
+	if (rsp_data->status) {
+		dev_dbg(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
+		return __efi_status_to_err(qseos_uefi_status_to_efi(rsp_data->status));
+	}
+
+	*storage_space = rsp_data->storage_space;
+	*remaining_space = rsp_data->remaining_space;
+	*max_variable_size = rsp_data->max_variable_size;
+
+	return 0;
+}
+
+static int _qcuefi_query_and_print_variable_info(struct qcom_uefi_app *qcuefi)
+{
+	int status;
+	u32 attrs = EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS | EFI_VARIABLE_NON_VOLATILE;
+	u64 storage_space;
+	u64 remaining_space;
+	u64 max_variable_size;
+
+	status = qcuefi_query_variable_info(qcuefi, attrs, &storage_space, &remaining_space, &max_variable_size);
+	if (status) {
+		dev_err(qcuefi->dev, "%s: error: %d\n", __func__, status);
+		return status;
+	}
+	
+	dev_info(qcuefi->dev, "%s: attrs=0x%x\n", __func__, attrs);
+	dev_info(qcuefi->dev, "%s: storage_space=0x%llx\n", __func__, storage_space);
+	dev_info(qcuefi->dev, "%s: remaining_space=0x%llx\n", __func__, remaining_space);
+	dev_info(qcuefi->dev, "%s: max_variable_size=0x%llx\n", __func__, max_variable_size);
+
+	return 0;
+}
+
 static int _qcuefi_get_and_print_next(struct qcom_uefi_app *qcuefi, u64 *name_size,
 				      wchar_t* name, efi_guid_t* guid)
 {
@@ -396,7 +492,7 @@ static int _qcuefi_get_and_print_next(struct qcom_uefi_app *qcuefi, u64 *name_si
 	return 0;
 }
 
-static int _qcuefi_test(struct qcom_uefi_app *qcuefi)
+static int _qcuefi_dump_names_and_guid(struct qcom_uefi_app *qcuefi)
 {
 	wchar_t var_name[256] = {};
 	efi_guid_t var_guid = {};
@@ -413,6 +509,21 @@ static int _qcuefi_test(struct qcom_uefi_app *qcuefi)
 		if (status)
 			return status;
 	}
+
+	return 0;
+}
+
+static int _qcuefi_test(struct qcom_uefi_app *qcuefi)
+{
+	int status;
+
+	status = _qcuefi_query_and_print_variable_info(qcuefi);
+	if (status)
+		return status;
+
+	status = _qcuefi_dump_names_and_guid(qcuefi);
+	if (status)
+		return status;
 
 	return 0;
 }
