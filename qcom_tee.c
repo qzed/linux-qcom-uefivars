@@ -139,7 +139,14 @@ int qctee_app_send(struct device *dev, u32 app_id, dma_addr_t req, u64 req_len,
 		.args[4] = rsp_len,
 	};
 
+	/* Make sure the request is fully written before sending it off. */
+	dma_wmb();
+
 	status = qctee_os_scm_call(dev, &desc, &res);
+
+	/* Make sure we don't attempt any reads before the SMC call is done. */
+	dma_rmb();
+
 	if (status)
 		return status;
 
