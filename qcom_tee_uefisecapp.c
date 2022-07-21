@@ -162,7 +162,7 @@ static efi_status_t qctee_uefi_get_variable(struct qcuefi_client *qcuefi, const 
 		return EFI_INVALID_PARAMETER;
 
 	/* Validation: We need a buffer if the buffer_size is nonzero. */
-	if (buffer_size != 0 && !data)
+	if (buffer_size && !data)
 		return EFI_INVALID_PARAMETER;
 
 	/* Compute required size. */
@@ -266,7 +266,10 @@ static efi_status_t qctee_uefi_set_variable(struct qcuefi_client *qcuefi, const 
 	if (!name || !guid)
 		return EFI_INVALID_PARAMETER;
 
-	/* Make sur ewe have some data if data_size is nonzero. */
+	/* 
+	 * Make sur ewe have some data if data_size is nonzero. Note: Using a
+	 * size of zero is valid and deletes the variable.
+	 */
 	if (data_size && !data)
 		return EFI_INVALID_PARAMETER;
 
