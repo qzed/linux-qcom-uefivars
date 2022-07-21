@@ -48,7 +48,9 @@ static unsigned long utf16_strlcpy(efi_char16_t *dst, const efi_char16_t *src, u
 }
 
 
-/* -- UEFI app interface. --------------------------------------------------- */
+/* -- Qualcomm "uefisecapp" interface definitions. -------------------------- */
+
+#define QCTEE_UEFISEC_APP_NAME			"qcom.tz.uefisecapp"
 
 #define QCTEE_CMD_UEFI(x)			(0x8000 | x)
 #define QCTEE_CMD_UEFI_GET_VARIABLE		QCTEE_CMD_UEFI(0)
@@ -130,7 +132,8 @@ struct qctee_rsp_uefi_query_variable_info {
 	u64 max_variable_size;
 } __packed;
 
-#define QCOM_UEFISEC_APP_NAME	"qcom.tz.uefisecapp"
+
+/* -- UEFI app interface. --------------------------------------------------- */
 
 struct qcom_uefi_app {
 	struct device *dev;
@@ -605,7 +608,7 @@ static int qcom_uefivars_probe(struct platform_device *pdev)
 	qcuefi->dev = &pdev->dev;
 
 	/* Get application id for uefisecapp. */
-	status = qctee_app_get_id(&pdev->dev, QCOM_UEFISEC_APP_NAME, &qcuefi->app_id);
+	status = qctee_app_get_id(&pdev->dev, QCTEE_UEFISEC_APP_NAME, &qcuefi->app_id);
 	if (status) {
 		dev_err(&pdev->dev, "failed to query app ID: %d\n", status);
 		return status;
