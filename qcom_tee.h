@@ -19,7 +19,8 @@
 
 /* -- DMA helpers. ---------------------------------------------------------- */
 
-#define QCTEE_DMA_ALIGN(ptr)		ALIGN(ptr, 8)
+#define QCTEE_DMA_ALIGNMENT		8
+#define QCTEE_DMA_ALIGN(ptr)		ALIGN(ptr, QCTEE_DMA_ALIGNMENT)
 
 struct qctee_dma {
 	unsigned long size;
