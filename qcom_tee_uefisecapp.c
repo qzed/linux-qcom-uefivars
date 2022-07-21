@@ -636,7 +636,7 @@ static int qcom_uefivars_probe(struct platform_device *pdev)
 	if (status)
 		goto err_ref;
 
-	/* Register efivars. */
+	/* Register efivar ops. */
 	status = efivars_register(&qcuefi->efivars, &qcom_efivar_ops, qcuefi->kobj);
 	if (status)
 		goto err_register;
