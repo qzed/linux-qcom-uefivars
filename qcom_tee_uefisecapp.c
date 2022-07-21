@@ -266,7 +266,7 @@ static efi_status_t qctee_uefi_set_variable(struct qcuefi_client *qcuefi, const 
 	if (!name || !guid)
 		return EFI_INVALID_PARAMETER;
 
-	/* 
+	/*
 	 * Make sur ewe have some data if data_size is nonzero. Note: Using a
 	 * size of zero is valid and deletes the variable.
 	 */
