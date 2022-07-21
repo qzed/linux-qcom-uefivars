@@ -15,15 +15,16 @@
 
 /* -- DMA helpers. ---------------------------------------------------------- */
 
-#define QSEOS_DMA_ALIGN(ptr)	ALIGN(ptr, 8)
+#define QCOM_TEE_DMA_ALIGN(ptr)		ALIGN(ptr, 8)
 
-struct qseos_dma {
+struct qcom_tee_dma {
 	unsigned long size;
 	void *virt;
 	dma_addr_t phys;
 };
 
-static int qseos_dma_alloc(struct device *dev, struct qseos_dma *dma, unsigned long size, gfp_t gfp)
+static int qcom_tee_dma_alloc(struct device *dev, struct qcom_tee_dma *dma,
+			      unsigned long size, gfp_t gfp)
 {
 	dma->virt = dma_alloc_coherent(dev, size, &dma->phys, GFP_KERNEL);
 	if (!dma->virt)
@@ -33,25 +34,25 @@ static int qseos_dma_alloc(struct device *dev, struct qseos_dma *dma, unsigned l
 	return 0;
 }
 
-static void qseos_dma_free(struct device *dev, struct qseos_dma *dma)
+static void qcom_tee_dma_free(struct device *dev, struct qcom_tee_dma *dma)
 {
 	dma_free_coherent(dev, dma->size, dma->virt, dma->phys);
 }
 
-static int qseos_dma_realloc(struct device *dev, struct qseos_dma *dma, unsigned long size,
-			     gfp_t gfp)
+static int qcom_tee_dma_realloc(struct device *dev, struct qcom_tee_dma *dma,
+				unsigned long size, gfp_t gfp)
 {
 	if (size <= dma->size)
 		return 0;
 
-	qseos_dma_free(dev, dma);
-	return qseos_dma_alloc(dev, dma, size, gfp);
+	qcom_tee_dma_free(dev, dma);
+	return qcom_tee_dma_alloc(dev, dma, size, gfp);
 }
 
-static void qseos_dma_aligned(const struct qseos_dma *base, struct qseos_dma *out,
-			      unsigned long offset)
+static void qcom_tee_dma_aligned(const struct qcom_tee_dma *base,
+				 struct qcom_tee_dma *out, unsigned long offset)
 {
-	out->virt = (void *)QSEOS_DMA_ALIGN((uintptr_t)base->virt + offset);
+	out->virt = (void *)QCOM_TEE_DMA_ALIGN((uintptr_t)base->virt + offset);
 	out->phys = base->phys + (out->virt - base->virt);
 	out->size = base->size - (out->virt - base->virt);
 }
@@ -245,7 +246,7 @@ struct qcom_uefi_app {
 	struct device *dev;
 	struct kobject *kobj;
 	struct efivars efivars;
-	struct qseos_dma dma;
+	struct qcom_tee_dma dma;
 	u32 app_id;
 };
 
@@ -343,8 +344,8 @@ static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const efi_
 {
 	struct qcom_uefi_get_variable_req *req_data;
 	struct qcom_uefi_get_variable_rsp *rsp_data;
-	struct qseos_dma dma_req;
-	struct qseos_dma dma_rsp;
+	struct qcom_tee_dma dma_req;
+	struct qcom_tee_dma dma_rsp;
 	unsigned long name_size = utf16_strsize(name, U32_MAX);
 	unsigned long buffer_size = *data_size;
 	unsigned long size;
@@ -367,12 +368,12 @@ static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const efi_
 	size = PAGE_ALIGN(size);
 
 	/* Make sure we have enough DMA memory. */
-	status = qseos_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
+	status = qcom_tee_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
 	if (status)
 		return EFI_OUT_OF_RESOURCES;
 
 	/* Align request struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0);
+	qcom_tee_dma_aligned(&qcuefi->dma, &dma_req, 0);
 	req_data = dma_req.virt;
 
 	/* Set up request data. */
@@ -380,7 +381,7 @@ static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const efi_
 	req_data->data_size = buffer_size;
 	req_data->name_offset = sizeof(*req_data);
 	req_data->name_size = name_size;
-	req_data->guid_offset = QSEOS_DMA_ALIGN(req_data->name_offset + name_size);
+	req_data->guid_offset = QCOM_TEE_DMA_ALIGN(req_data->name_offset + name_size);
 	req_data->guid_size = sizeof(*guid);
 	req_data->length = req_data->guid_offset + req_data->guid_size;
 
@@ -391,7 +392,7 @@ static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const efi_
 	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
 
 	/* Align response struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
+	qcom_tee_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
 	rsp_data = dma_rsp.virt;
 
 	/* Perform SCM call. */
@@ -454,8 +455,8 @@ static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_
 {
 	struct qcom_uefi_set_variable_req *req_data;
 	struct qcom_uefi_set_variable_rsp *rsp_data;
-	struct qseos_dma dma_req;
-	struct qseos_dma dma_rsp;
+	struct qcom_tee_dma dma_req;
+	struct qcom_tee_dma dma_rsp;
 	unsigned long name_size = utf16_strsize(name, U32_MAX);
 	unsigned long size;
 	int status;
@@ -476,12 +477,12 @@ static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_
 	size = PAGE_ALIGN(size);
 
 	/* Make sure we have enough DMA memory. */
-	status = qseos_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
+	status = qcom_tee_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
 	if (status)
 		return EFI_OUT_OF_RESOURCES;
 
 	/* Align request struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0);
+	qcom_tee_dma_aligned(&qcuefi->dma, &dma_req, 0);
 	req_data = dma_req.virt;
 
 	/* Set up request data. */
@@ -489,7 +490,7 @@ static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_
 	req_data->attributes = attributes;
 	req_data->name_offset = sizeof(*req_data);
 	req_data->name_size = name_size;
-	req_data->guid_offset = QSEOS_DMA_ALIGN(req_data->name_offset + name_size);
+	req_data->guid_offset = QCOM_TEE_DMA_ALIGN(req_data->name_offset + name_size);
 	req_data->guid_size = sizeof(*guid);
 	req_data->data_offset = req_data->guid_offset + req_data->guid_size;
 	req_data->data_size = data_size;
@@ -503,7 +504,7 @@ static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_
 		memcpy(dma_req.virt + req_data->data_offset, data, req_data->data_size);
 
 	/* Align response struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
+	qcom_tee_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
 	rsp_data = dma_rsp.virt;
 
 	/* Perform SCM call. */
@@ -538,8 +539,8 @@ static efi_status_t qcuefi_get_next_variable(struct qcom_uefi_app *qcuefi, unsig
 {
 	struct qcom_uefi_get_next_variable_req *req_data;
 	struct qcom_uefi_get_next_variable_rsp *rsp_data;
-	struct qseos_dma dma_req;
-	struct qseos_dma dma_rsp;
+	struct qcom_tee_dma dma_req;
+	struct qcom_tee_dma dma_rsp;
 	unsigned long size;
 	efi_status_t efi_status;
 	int status;
@@ -560,17 +561,17 @@ static efi_status_t qcuefi_get_next_variable(struct qcom_uefi_app *qcuefi, unsig
 	size = PAGE_ALIGN(size);
 
 	/* Make sure we have enough DMA memory. */
-	status = qseos_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
+	status = qcom_tee_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
 	if (status)
 		return EFI_OUT_OF_RESOURCES;
 
 	/* Align request struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0);
+	qcom_tee_dma_aligned(&qcuefi->dma, &dma_req, 0);
 	req_data = dma_req.virt;
 
 	/* Set up request data. */
 	req_data->command_id = TZ_UEFI_VAR_GET_NEXT_VARIABLE;
-	req_data->guid_offset = QSEOS_DMA_ALIGN(sizeof(*req_data));
+	req_data->guid_offset = QCOM_TEE_DMA_ALIGN(sizeof(*req_data));
 	req_data->guid_size = sizeof(*guid);
 	req_data->name_offset = req_data->guid_offset + req_data->guid_size;
 	req_data->name_size = *name_size;
@@ -583,7 +584,7 @@ static efi_status_t qcuefi_get_next_variable(struct qcom_uefi_app *qcuefi, unsig
 	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, *name_size / sizeof(name[0]));
 
 	/* Align response struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
+	qcom_tee_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
 	rsp_data = dma_rsp.virt;
 
 	/* Perform SCM call. */
@@ -643,8 +644,8 @@ static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32
 {
 	struct qcom_uefi_query_variable_info_req *req_data;
 	struct qcom_uefi_query_variable_info_rsp *rsp_data;
-	struct qseos_dma dma_req;
-	struct qseos_dma dma_rsp;
+	struct qcom_tee_dma dma_req;
+	struct qcom_tee_dma dma_rsp;
 	unsigned long size;
 	int status;
 
@@ -654,12 +655,12 @@ static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32
 	size = PAGE_ALIGN(size);
 
 	/* Make sure we have enough DMA memory. */
-	status = qseos_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
+	status = qcom_tee_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
 	if (status)
 		return EFI_OUT_OF_RESOURCES;
 
 	/* Align request struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_req, 0);
+	qcom_tee_dma_aligned(&qcuefi->dma, &dma_req, 0);
 	req_data = dma_req.virt;
 
 	/* Set up request data. */
@@ -668,7 +669,7 @@ static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32
 	req_data->attributes = attributes;
 
 	/* Align response struct. */
-	qseos_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
+	qcom_tee_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
 	rsp_data = dma_rsp.virt;
 
 	/* Perform SCM call. */
@@ -821,7 +822,7 @@ static int qcom_uefivars_probe(struct platform_device *pdev)
 		return -EFAULT;
 	}
 
-	status = qseos_dma_alloc(&pdev->dev, &qcuefi->dma, PAGE_SIZE, GFP_KERNEL);
+	status = qcom_tee_dma_alloc(&pdev->dev, &qcuefi->dma, PAGE_SIZE, GFP_KERNEL);
 	if (status)
 		return status;
 
@@ -850,7 +851,7 @@ err_register:
 err_ref:
 	kobject_put(qcuefi->kobj);
 err_kobj:
-	qseos_dma_free(qcuefi->dev, &qcuefi->dma);
+	qcom_tee_dma_free(qcuefi->dev, &qcuefi->dma);
 	return status;
 }
 
@@ -866,7 +867,7 @@ static int qcom_uefivars_remove(struct platform_device *pdev)
 
 	/* Free remaining resources. */
 	kobject_put(qcuefi->kobj);
-	qseos_dma_free(qcuefi->dev, &qcuefi->dma);
+	qcom_tee_dma_free(qcuefi->dev, &qcuefi->dma);
 
 	return 0;
 }
