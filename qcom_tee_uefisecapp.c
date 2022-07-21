@@ -47,17 +47,8 @@ static unsigned long utf16_strlcpy(efi_char16_t *dst, const efi_char16_t *src, u
 	return actual;
 }
 
+
 /* -- UEFI app interface. --------------------------------------------------- */
-
-#define QCOM_UEFISEC_APP_NAME	"qcom.tz.uefisecapp"
-
-struct qcom_uefi_app {
-	struct device *dev;
-	struct kobject *kobj;
-	struct efivars efivars;
-	struct qctee_dma dma;
-	u32 app_id;
-};
 
 #define QCTEE_CMD_UEFI(x)			(0x8000 | x)
 #define QCTEE_CMD_UEFI_GET_VARIABLE		QCTEE_CMD_UEFI(0)
@@ -138,6 +129,16 @@ struct qcom_uefi_query_variable_info_rsp {
 	u64 remaining_space;
 	u64 max_variable_size;
 } __packed;
+
+#define QCOM_UEFISEC_APP_NAME	"qcom.tz.uefisecapp"
+
+struct qcom_uefi_app {
+	struct device *dev;
+	struct kobject *kobj;
+	struct efivars efivars;
+	struct qctee_dma dma;
+	u32 app_id;
+};
 
 static efi_status_t qcuefi_status_to_efi(u32 status)
 {
