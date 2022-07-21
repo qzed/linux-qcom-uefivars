@@ -331,7 +331,7 @@ struct qcom_uefi_query_variable_info_rsp {
 	u64 max_variable_size;
 } __packed;
 
-static efi_status_t qseos_uefi_status_to_efi(u32 status)
+static efi_status_t qcuefi_status_to_efi(u32 status)
 {
 	u64 category = status & 0xf0000000;
 	u64 code = status & 0x0fffffff;
@@ -414,7 +414,7 @@ static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const efi_
 
 	if (rsp_data->status) {
 		dev_dbg(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
-		efi_status = qseos_uefi_status_to_efi(rsp_data->status);
+		efi_status = qcuefi_status_to_efi(rsp_data->status);
 
 		/* Update size and attributes in case buffer is too small. */
 		if (efi_status == EFI_BUFFER_TOO_SMALL) {
@@ -529,7 +529,7 @@ static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_
 
 	if (rsp_data->status) {
 		dev_dbg(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
-		return qseos_uefi_status_to_efi(rsp_data->status);
+		return qcuefi_status_to_efi(rsp_data->status);
 	}
 
 	return EFI_SUCCESS;
@@ -606,7 +606,7 @@ static efi_status_t qcuefi_get_next_variable(struct qcom_uefi_app *qcuefi, unsig
 
 	if (rsp_data->status) {
 		dev_dbg(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
-		efi_status = qseos_uefi_status_to_efi(rsp_data->status);
+		efi_status = qcuefi_status_to_efi(rsp_data->status);
 
 		/* Update size with required size in case buffer is too small. */
 		if (efi_status == EFI_BUFFER_TOO_SMALL)
@@ -694,7 +694,7 @@ static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32
 
 	if (rsp_data->status) {
 		dev_dbg(qcuefi->dev, "%s: uefisecapp error: 0x%x\n", __func__, rsp_data->status);
-		return qseos_uefi_status_to_efi(rsp_data->status);
+		return qcuefi_status_to_efi(rsp_data->status);
 	}
 
 	if (storage_space)
