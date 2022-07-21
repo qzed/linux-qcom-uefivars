@@ -13,7 +13,7 @@
 
 /* -- UTF-16 helpers. ------------------------------------------------------- */
 
-static unsigned long utf16_strnlen(const efi_char16_t* str, unsigned long max)
+static unsigned long utf16_strnlen(const efi_char16_t *str, unsigned long max)
 {
 	size_t i;
 
@@ -24,7 +24,7 @@ static unsigned long utf16_strnlen(const efi_char16_t* str, unsigned long max)
 	return i;
 }
 
-static unsigned long utf16_strsize(const efi_char16_t* str, unsigned long max)
+static unsigned long utf16_strsize(const efi_char16_t *str, unsigned long max)
 {
 	return (utf16_strnlen(str, max) + 1) * sizeof(str[0]);
 }
