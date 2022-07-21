@@ -56,7 +56,7 @@ static unsigned long utf16_strlcpy(efi_char16_t *dst, const efi_char16_t *src, u
 #define QCTEE_CMD_UEFI_GET_NEXT_VARIABLE	QCTEE_CMD_UEFI(2)
 #define QCTEE_CMD_UEFI_QUERY_VARIABLE_INFO	QCTEE_CMD_UEFI(3)
 
-struct qcom_uefi_get_variable_req {
+struct qctee_req_uefi_get_variable {
 	u32 command_id;
 	u32 length;
 	u32 name_offset;
@@ -66,7 +66,7 @@ struct qcom_uefi_get_variable_req {
 	u32 data_size;		/* Size of output buffer in bytes. */
 } __packed;
 
-struct qcom_uefi_get_variable_rsp {
+struct qctee_rsp_uefi_get_variable {
 	u32 command_id;
 	u32 length;
 	u32 status;
@@ -75,7 +75,7 @@ struct qcom_uefi_get_variable_rsp {
 	u32 data_size;		/* Size of output data or minimum size required on EFI_BUFFER_TOO_SMALL. */
 } __packed;
 
-struct qcom_uefi_set_variable_req {
+struct qctee_req_uefi_set_variable {
 	u32 command_id;
 	u32 length;
 	u32 name_offset;
@@ -87,7 +87,7 @@ struct qcom_uefi_set_variable_req {
 	u32 data_size;
 } __packed;
 
-struct qcom_uefi_set_variable_rsp {
+struct qctee_rsp_uefi_set_variable {
 	u32 command_id;
 	u32 length;
 	u32 status;
@@ -95,7 +95,7 @@ struct qcom_uefi_set_variable_rsp {
 	u32 _unknown2;
 } __packed;
 
-struct qcom_uefi_get_next_variable_req {
+struct qctee_req_uefi_get_next_variable {
 	u32 command_id;
 	u32 length;
 	u32 guid_offset;
@@ -104,7 +104,7 @@ struct qcom_uefi_get_next_variable_req {
 	u32 name_size;		/* Size of full buffer in bytes with nul-terminator. */
 } __packed;
 
-struct qcom_uefi_get_next_variable_rsp {
+struct qctee_rsp_uefi_get_next_variable {
 	u32 command_id;
 	u32 length;
 	u32 status;
@@ -114,13 +114,13 @@ struct qcom_uefi_get_next_variable_rsp {
 	u32 name_size;		/* Size in bytes with nul-terminator. */
 } __packed;
 
-struct qcom_uefi_query_variable_info_req {
+struct qctee_req_uefi_query_variable_info {
 	u32 command_id;
 	u32 length;
 	u32 attributes;
 } __packed;
 
-struct qcom_uefi_query_variable_info_rsp {
+struct qctee_rsp_uefi_query_variable_info {
 	u32 command_id;
 	u32 length;
 	u32 status;
@@ -152,8 +152,8 @@ static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const efi_
 					const efi_guid_t *guid, u32 *attributes,
 					unsigned long *data_size, void *data)
 {
-	struct qcom_uefi_get_variable_req *req_data;
-	struct qcom_uefi_get_variable_rsp *rsp_data;
+	struct qctee_req_uefi_get_variable *req_data;
+	struct qctee_rsp_uefi_get_variable *rsp_data;
 	struct qctee_dma dma_req;
 	struct qctee_dma dma_rsp;
 	unsigned long name_size = utf16_strsize(name, U32_MAX);
@@ -259,8 +259,8 @@ static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_
 					const efi_guid_t *guid, u32 attributes,
 					unsigned long data_size, const void *data)
 {
-	struct qcom_uefi_set_variable_req *req_data;
-	struct qcom_uefi_set_variable_rsp *rsp_data;
+	struct qctee_req_uefi_set_variable *req_data;
+	struct qctee_rsp_uefi_set_variable *rsp_data;
 	struct qctee_dma dma_req;
 	struct qctee_dma dma_rsp;
 	unsigned long name_size = utf16_strsize(name, U32_MAX);
@@ -339,8 +339,8 @@ static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_
 static efi_status_t qcuefi_get_next_variable(struct qcom_uefi_app *qcuefi, unsigned long *name_size,
 					     efi_char16_t *name, efi_guid_t *guid)
 {
-	struct qcom_uefi_get_next_variable_req *req_data;
-	struct qcom_uefi_get_next_variable_rsp *rsp_data;
+	struct qctee_req_uefi_get_next_variable *req_data;
+	struct qctee_rsp_uefi_get_next_variable *rsp_data;
 	struct qctee_dma dma_req;
 	struct qctee_dma dma_rsp;
 	unsigned long size;
@@ -440,8 +440,8 @@ static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32
 					       u64 *storage_space, u64 *remaining_space,
 					       u64 *max_variable_size)
 {
-	struct qcom_uefi_query_variable_info_req *req_data;
-	struct qcom_uefi_query_variable_info_rsp *rsp_data;
+	struct qctee_req_uefi_query_variable_info *req_data;
+	struct qctee_rsp_uefi_query_variable_info *rsp_data;
 	struct qctee_dma dma_req;
 	struct qctee_dma dma_rsp;
 	unsigned long size;
