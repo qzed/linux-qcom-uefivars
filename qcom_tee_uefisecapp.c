@@ -205,8 +205,7 @@ static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const efi_
 	rsp_data = dma_rsp.virt;
 
 	/* Perform SCM call. */
-	status = qctee_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
-				dma_rsp.phys, dma_rsp.size);
+	status = qctee_app_send(qcuefi->dev, qcuefi->app_id, &dma_req, &dma_rsp);
 
 	/* Check for errors and validate. */
 	if (status)
@@ -318,8 +317,7 @@ static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_
 	dma_req.size = req_data->length;
 	dma_rsp.size = sizeof(*rsp_data);
 
-	status = qctee_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
-				dma_rsp.phys, dma_rsp.size);
+	status = qctee_app_send(qcuefi->dev, qcuefi->app_id, &dma_req, &dma_rsp);
 
 	/* Check for errors and validate. */
 	if (status)
@@ -393,8 +391,7 @@ static efi_status_t qcuefi_get_next_variable(struct qcom_uefi_app *qcuefi, unsig
 	rsp_data = dma_rsp.virt;
 
 	/* Perform SCM call. */
-	status = qctee_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
-				dma_rsp.phys, dma_rsp.size);
+	status = qctee_app_send(qcuefi->dev, qcuefi->app_id, &dma_req, &dma_rsp);
 
 	/* Check for errors and validate. */
 	if (status)
@@ -479,8 +476,7 @@ static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32
 	dma_req.size = req_data->length;
 	dma_rsp.size = sizeof(*rsp_data);
 
-	status = qctee_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
-				dma_rsp.phys, dma_rsp.size);
+	status = qctee_app_send(qcuefi->dev, qcuefi->app_id, &dma_req, &dma_rsp);
 
 	/* Check for errors and validate. */
 	if (status)

@@ -119,8 +119,7 @@ int qctee_app_get_id(struct device *dev, const char* app_name, u32 *app_id)
 }
 EXPORT_SYMBOL_GPL(qctee_app_get_id);
 
-int qctee_app_send(struct device *dev, u32 app_id, dma_addr_t req, u64 req_len,
-		   dma_addr_t rsp, u64 rsp_len)
+int qctee_app_send(struct device *dev, u32 app_id, struct qctee_dma *req, struct qctee_dma *rsp)
 {
 	struct qctee_os_scm_resp res = {};
 	int status;
@@ -133,10 +132,10 @@ int qctee_app_send(struct device *dev, u32 app_id, dma_addr_t req, u64 req_len,
 					 QCOM_SCM_RW, QCOM_SCM_VAL,
 					 QCOM_SCM_RW, QCOM_SCM_VAL),
 		.args[0] = app_id,
-		.args[1] = req,
-		.args[2] = req_len,
-		.args[3] = rsp,
-		.args[4] = rsp_len,
+		.args[1] = req->phys,
+		.args[2] = req->size,
+		.args[3] = rsp->phys,
+		.args[4] = rsp->size,
 	};
 
 	/* Make sure the request is fully written before sending it off. */
