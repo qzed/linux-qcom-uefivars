@@ -74,7 +74,7 @@ static inline void qctee_dma_aligned(const struct qctee_dma *base, struct qctee_
 #define QCTEE_TZ_SVC_LISTENER			2
 
 enum qctee_os_scm_result {
-	QCTEE_OS_RESULT_SUCCESS 		= 0,
+	QCTEE_OS_RESULT_SUCCESS			= 0,
 	QCTEE_OS_RESULT_INCOMPLETE		= 1,
 	QCTEE_OS_RESULT_BLOCKED_ON_LISTENER	= 2,
 	QCTEE_OS_RESULT_FAILURE			= 0xFFFFFFFF,
@@ -99,7 +99,7 @@ int qctee_os_scm_call(struct device *dev, const struct qcom_scm_desc *desc,
 
 #define QCTEE_MAX_APP_NAME_SIZE			64
 
-int qctee_app_get_id(struct device *dev, const char* app_name, u32 *app_id);
+int qctee_app_get_id(struct device *dev, const char *app_name, u32 *app_id);
 int qctee_app_send(struct device *dev, u32 app_id, struct qctee_dma *req, struct qctee_dma *rsp);
 
 #endif /* _LINUX_QCOM_TEE_H */

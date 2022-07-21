@@ -73,7 +73,7 @@ EXPORT_SYMBOL_GPL(qctee_os_scm_call);
 
 /* -- Secure App interface. ------------------------------------------------- */
 
-int qctee_app_get_id(struct device *dev, const char* app_name, u32 *app_id)
+int qctee_app_get_id(struct device *dev, const char *app_name, u32 *app_id)
 {
 	unsigned long name_buf_size = QCTEE_MAX_APP_NAME_SIZE;
 	unsigned long app_name_len = strlen(app_name);
