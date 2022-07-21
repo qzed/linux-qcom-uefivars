@@ -127,7 +127,7 @@ struct qctee_rsp_uefi_query_variable_info {
 
 /* -- UEFI app interface. --------------------------------------------------- */
 
-struct qcom_uefi_app {
+struct qcuefi_client {
 	struct device *dev;
 	struct kobject *kobj;
 	struct efivars efivars;
@@ -143,7 +143,7 @@ static efi_status_t qctee_uefi_status_to_efi(u32 status)
 	return category << (BITS_PER_LONG - 32) | code;
 }
 
-static efi_status_t qctee_uefi_get_variable(struct qcom_uefi_app *qcuefi, const efi_char16_t *name,
+static efi_status_t qctee_uefi_get_variable(struct qcuefi_client *qcuefi, const efi_char16_t *name,
 					    const efi_guid_t *guid, u32 *attributes,
 					    unsigned long *data_size, void *data)
 {
@@ -250,7 +250,7 @@ static efi_status_t qctee_uefi_get_variable(struct qcom_uefi_app *qcuefi, const 
 	return EFI_SUCCESS;
 }
 
-static efi_status_t qctee_uefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_char16_t *name,
+static efi_status_t qctee_uefi_set_variable(struct qcuefi_client *qcuefi, const efi_char16_t *name,
 					    const efi_guid_t *guid, u32 attributes,
 					    unsigned long data_size, const void *data)
 {
@@ -331,7 +331,7 @@ static efi_status_t qctee_uefi_set_variable(struct qcom_uefi_app *qcuefi, const 
 	return EFI_SUCCESS;
 }
 
-static efi_status_t qctee_uefi_get_next_variable(struct qcom_uefi_app *qcuefi,
+static efi_status_t qctee_uefi_get_next_variable(struct qcuefi_client *qcuefi,
 						 unsigned long *name_size, efi_char16_t *name,
 						 efi_guid_t *guid)
 {
@@ -432,7 +432,7 @@ static efi_status_t qctee_uefi_get_next_variable(struct qcom_uefi_app *qcuefi,
 }
 
 __maybe_unused	// TODO: use this somehow...?
-static efi_status_t qctee_uefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32 attributes,
+static efi_status_t qctee_uefi_query_variable_info(struct qcuefi_client *qcuefi, u32 attributes,
 						   u64 *storage_space, u64 *remaining_space,
 						   u64 *max_variable_size)
 {
@@ -501,10 +501,10 @@ static efi_status_t qctee_uefi_query_variable_info(struct qcom_uefi_app *qcuefi,
 
 /* -- Global efivar interface. ---------------------------------------------- */
 
-static struct qcom_uefi_app *__qcuefi;
+static struct qcuefi_client *__qcuefi;
 static DEFINE_MUTEX(__qcuefi_lock);
 
-static int qcuefi_set_reference(struct qcom_uefi_app *qcuefi)
+static int qcuefi_set_reference(struct qcuefi_client *qcuefi)
 {
 	mutex_lock(&__qcuefi_lock);
 
@@ -519,7 +519,7 @@ static int qcuefi_set_reference(struct qcom_uefi_app *qcuefi)
 	return 0;
 }
 
-static struct qcom_uefi_app *qcuefi_acquire(void)
+static struct qcuefi_client *qcuefi_acquire(void)
 {
 	mutex_lock(&__qcuefi_lock);
 	return __qcuefi;
@@ -533,7 +533,7 @@ static void qcuefi_release(void)
 static efi_status_t qcuefi_get_variable(efi_char16_t *name, efi_guid_t *vendor, u32 *attr,
 					unsigned long *data_size, void *data)
 {
-	struct qcom_uefi_app *qcuefi;
+	struct qcuefi_client *qcuefi;
 	efi_status_t status;
 
 	qcuefi = qcuefi_acquire();
@@ -549,7 +549,7 @@ static efi_status_t qcuefi_get_variable(efi_char16_t *name, efi_guid_t *vendor, 
 static efi_status_t qcuefi_set_variable(efi_char16_t *name, efi_guid_t *vendor,
 					u32 attr, unsigned long data_size, void *data)
 {
-	struct qcom_uefi_app *qcuefi;
+	struct qcuefi_client *qcuefi;
 	efi_status_t status;
 
 	qcuefi = qcuefi_acquire();
@@ -565,7 +565,7 @@ static efi_status_t qcuefi_set_variable(efi_char16_t *name, efi_guid_t *vendor,
 static efi_status_t qcuefi_get_next_variable(unsigned long *name_size, efi_char16_t *name,
 					     efi_guid_t *vendor)
 {
-	struct qcom_uefi_app *qcuefi;
+	struct qcuefi_client *qcuefi;
 	efi_status_t status;
 
 	qcuefi = qcuefi_acquire();
@@ -589,7 +589,7 @@ static const struct efivar_operations qcom_efivar_ops = {
 
 static int qcom_uefivars_probe(struct platform_device *pdev)
 {
-	struct qcom_uefi_app *qcuefi;
+	struct qcuefi_client *qcuefi;
 	int status;
 
 	/* Allocate driver data. */
@@ -617,7 +617,7 @@ static int qcom_uefivars_probe(struct platform_device *pdev)
 		return status;
 
 	/* Set up kobject for efivars interface. */
-	qcuefi->kobj = kobject_create_and_add("qcuefisecapp", firmware_kobj);
+	qcuefi->kobj = kobject_create_and_add("qcom_tee_uefisecapp", firmware_kobj);
 	if (!qcuefi->kobj) {
 		status = -ENOMEM;
 		goto err_kobj;
@@ -647,7 +647,7 @@ err_kobj:
 
 static int qcom_uefivars_remove(struct platform_device *pdev)
 {
-	struct qcom_uefi_app *qcuefi = platform_get_drvdata(pdev);
+	struct qcuefi_client *qcuefi = platform_get_drvdata(pdev);
 
 	/* Unregister efivar ops. */
 	efivars_unregister(&qcuefi->efivars);
@@ -666,7 +666,7 @@ static struct platform_driver qcom_uefivars_driver = {
 	.probe = qcom_uefivars_probe,
 	.remove = qcom_uefivars_remove,
 	.driver = {
-		.name = "qcom_uefivars",
+		.name = "qcom_tee_uefisecapp",
 		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 	},
 };
@@ -685,7 +685,7 @@ static int __init qcom_uefivars_init(void)
 	if (status)
 		return status;
 
-	pdev = platform_device_alloc("qcom_uefivars", PLATFORM_DEVID_NONE);
+	pdev = platform_device_alloc("qcom_tee_uefisecapp", PLATFORM_DEVID_NONE);
 	if (!pdev) {
 		status = -ENOMEM;
 		goto err_alloc;
