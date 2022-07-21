@@ -59,11 +59,11 @@ struct qcom_uefi_app {
 	u32 app_id;
 };
 
-#define TZ_UEFI_VAR_CMD(x)		(0x8000 | x)
-#define TZ_UEFI_VAR_GET_VARIABLE	TZ_UEFI_VAR_CMD(0)
-#define TZ_UEFI_VAR_SET_VARIABLE	TZ_UEFI_VAR_CMD(1)
-#define TZ_UEFI_VAR_GET_NEXT_VARIABLE	TZ_UEFI_VAR_CMD(2)
-#define TZ_UEFI_VAR_QUERY_VARIABLE_INFO	TZ_UEFI_VAR_CMD(3)
+#define QCTEE_CMD_UEFI(x)			(0x8000 | x)
+#define QCTEE_CMD_UEFI_GET_VARIABLE		QCTEE_CMD_UEFI(0)
+#define QCTEE_CMD_UEFI_SET_VARIABLE		QCTEE_CMD_UEFI(1)
+#define QCTEE_CMD_UEFI_GET_NEXT_VARIABLE	QCTEE_CMD_UEFI(2)
+#define QCTEE_CMD_UEFI_QUERY_VARIABLE_INFO	QCTEE_CMD_UEFI(3)
 
 struct qcom_uefi_get_variable_req {
 	u32 command_id;
@@ -185,7 +185,7 @@ static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const efi_
 	req_data = dma_req.virt;
 
 	/* Set up request data. */
-	req_data->command_id = TZ_UEFI_VAR_GET_VARIABLE;
+	req_data->command_id = QCTEE_CMD_UEFI_GET_VARIABLE;
 	req_data->data_size = buffer_size;
 	req_data->name_offset = sizeof(*req_data);
 	req_data->name_size = name_size;
@@ -210,7 +210,7 @@ static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const efi_
 	if (status)
 		return EFI_DEVICE_ERROR;
 
-	if (rsp_data->command_id != TZ_UEFI_VAR_GET_VARIABLE)
+	if (rsp_data->command_id != QCTEE_CMD_UEFI_GET_VARIABLE)
 		return EFI_DEVICE_ERROR;
 
 	if (rsp_data->length < sizeof(*rsp_data) || rsp_data->length > dma_rsp.size)
@@ -290,7 +290,7 @@ static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_
 	req_data = dma_req.virt;
 
 	/* Set up request data. */
-	req_data->command_id = TZ_UEFI_VAR_SET_VARIABLE;
+	req_data->command_id = QCTEE_CMD_UEFI_SET_VARIABLE;
 	req_data->attributes = attributes;
 	req_data->name_offset = sizeof(*req_data);
 	req_data->name_size = name_size;
@@ -321,7 +321,7 @@ static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_
 	if (status)
 		return EFI_DEVICE_ERROR;
 
-	if (rsp_data->command_id != TZ_UEFI_VAR_SET_VARIABLE)
+	if (rsp_data->command_id != QCTEE_CMD_UEFI_SET_VARIABLE)
 		return EFI_DEVICE_ERROR;
 
 	if (rsp_data->length < sizeof(*rsp_data) || rsp_data->length > dma_rsp.size)
@@ -370,7 +370,7 @@ static efi_status_t qcuefi_get_next_variable(struct qcom_uefi_app *qcuefi, unsig
 	req_data = dma_req.virt;
 
 	/* Set up request data. */
-	req_data->command_id = TZ_UEFI_VAR_GET_NEXT_VARIABLE;
+	req_data->command_id = QCTEE_CMD_UEFI_GET_NEXT_VARIABLE;
 	req_data->guid_offset = QCTEE_DMA_ALIGN(sizeof(*req_data));
 	req_data->guid_size = sizeof(*guid);
 	req_data->name_offset = req_data->guid_offset + req_data->guid_size;
@@ -394,7 +394,7 @@ static efi_status_t qcuefi_get_next_variable(struct qcom_uefi_app *qcuefi, unsig
 	if (status)
 		return EFI_DEVICE_ERROR;
 
-	if (rsp_data->command_id != TZ_UEFI_VAR_GET_NEXT_VARIABLE)
+	if (rsp_data->command_id != QCTEE_CMD_UEFI_GET_NEXT_VARIABLE)
 		return EFI_DEVICE_ERROR;
 
 	if (rsp_data->length < sizeof(*rsp_data) || rsp_data->length > dma_rsp.size)
@@ -460,7 +460,7 @@ static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32
 	req_data = dma_req.virt;
 
 	/* Set up request data. */
-	req_data->command_id = TZ_UEFI_VAR_QUERY_VARIABLE_INFO;
+	req_data->command_id = QCTEE_CMD_UEFI_QUERY_VARIABLE_INFO;
 	req_data->length = sizeof(*req_data);
 	req_data->attributes = attributes;
 
@@ -478,7 +478,7 @@ static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32
 	if (status)
 		return EFI_DEVICE_ERROR;
 
-	if (rsp_data->command_id != TZ_UEFI_VAR_QUERY_VARIABLE_INFO)
+	if (rsp_data->command_id != QCTEE_CMD_UEFI_QUERY_VARIABLE_INFO)
 		return EFI_DEVICE_ERROR;
 
 	if (rsp_data->length < sizeof(*rsp_data) || rsp_data->length > dma_rsp.size)
