@@ -245,7 +245,7 @@ static efi_status_t qctee_uefi_get_variable(struct qcuefi_client *qcuefi, const 
 	if (buffer_size < rsp_data->data_size)
 		return EFI_BUFFER_TOO_SMALL;
 
-	/* Copy to output buffer. Note: We're guaranteed to have one at this point.  */
+	/* Copy to output buffer. Note: We're guaranteed to have one at this point. */
 	memcpy(data, dma_rsp.virt + rsp_data->data_offset, rsp_data->data_size);
 	return EFI_SUCCESS;
 }
