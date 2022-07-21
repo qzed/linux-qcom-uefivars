@@ -13,13 +13,13 @@
 
 #include "qcom_tee.h"
 
-
-/* -- UTF-16 helpers. ------------------------------------------------------- */
-
 // TODO:
 // - rename stuff to be more consistent
 // - split-up interfaces for tz-os and uefisecapp into separate files
 // - move into kernel
+
+
+/* -- UTF-16 helpers. ------------------------------------------------------- */
 
 static unsigned long utf16_strnlen(const efi_char16_t* str, unsigned long max)
 {

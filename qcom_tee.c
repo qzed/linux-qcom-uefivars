@@ -14,7 +14,7 @@
 #include "qcom_tee.h"
 
 
-/* -- OS SCM call interface. ------------------------------------------------ */
+/* -- Secure-OS SCM call interface. ----------------------------------------- */
 
 static int __qctee_os_scm_call(const struct qcom_scm_desc *desc,
 			       struct qctee_os_scm_resp *res)

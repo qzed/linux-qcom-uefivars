@@ -63,7 +63,7 @@ static inline void qctee_dma_aligned(const struct qctee_dma *base, struct qctee_
 }
 
 
-/* -- Secure OS SCM call interface. ----------------------------------------- */
+/* -- Secure-OS SCM call interface. ----------------------------------------- */
 
 #define QCTEE_TZ_OWNER_TZ_APPS			48
 #define QCTEE_TZ_OWNER_QSEE_OS			50
