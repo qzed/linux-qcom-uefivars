@@ -1,4 +1,3 @@
-#include <linux/dma-mapping.h>
 #include <linux/efi.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
@@ -12,53 +11,15 @@
 #include <linux/uuid.h>
 #include <linux/nls.h>
 
-
-/* -- DMA helpers. ---------------------------------------------------------- */
-
-#define QCTEE_DMA_ALIGN(ptr)		ALIGN(ptr, 8)
-
-struct qctee_dma {
-	unsigned long size;
-	void *virt;
-	dma_addr_t phys;
-};
-
-static int qctee_dma_alloc(struct device *dev, struct qctee_dma *dma,
-			   unsigned long size, gfp_t gfp)
-{
-	dma->virt = dma_alloc_coherent(dev, size, &dma->phys, GFP_KERNEL);
-	if (!dma->virt)
-		return -ENOMEM;
-
-	dma->size = size;
-	return 0;
-}
-
-static void qctee_dma_free(struct device *dev, struct qctee_dma *dma)
-{
-	dma_free_coherent(dev, dma->size, dma->virt, dma->phys);
-}
-
-static int qctee_dma_realloc(struct device *dev, struct qctee_dma *dma,
-			     unsigned long size, gfp_t gfp)
-{
-	if (size <= dma->size)
-		return 0;
-
-	qctee_dma_free(dev, dma);
-	return qctee_dma_alloc(dev, dma, size, gfp);
-}
-
-static void qctee_dma_aligned(const struct qctee_dma *base,
-			      struct qctee_dma *out, unsigned long offset)
-{
-	out->virt = (void *)QCTEE_DMA_ALIGN((uintptr_t)base->virt + offset);
-	out->phys = base->phys + (out->virt - base->virt);
-	out->size = base->size - (out->virt - base->virt);
-}
+#include "qcom_tee.h"
 
 
 /* -- UTF-16 helpers. ------------------------------------------------------- */
+
+// TODO:
+// - rename stuff to be more consistent
+// - split-up interfaces for tz-os and uefisecapp into separate files
+// - move into kernel
 
 static unsigned long utf16_strnlen(const efi_char16_t* str, unsigned long max)
 {
@@ -85,159 +46,6 @@ static unsigned long utf16_strlcpy(efi_char16_t *dst, const efi_char16_t *src, u
 
 	return actual;
 }
-
-
-/* -- TzApp interface. ------------------------------------------------------ */
-
-#define QCTEE_MAX_APP_NAME_SIZE			64
-
-#define QCTEE_TZ_OWNER_TZ_APPS			48
-#define QCTEE_TZ_OWNER_QSEE_OS			50
-
-#define QCTEE_TZ_SVC_APP_ID_PLACEHOLDER		0
-#define QCTEE_TZ_SVC_APP_MGR			1
-#define QCTEE_TZ_SVC_LISTENER			2
-
-enum qctee_os_scm_result {
-	QCTEE_OS_RESULT_SUCCESS 		= 0,
-	QCTEE_OS_RESULT_INCOMPLETE		= 1,
-	QCTEE_OS_RESULT_BLOCKED_ON_LISTENER	= 2,
-	QCTEE_OS_RESULT_FAILURE			= 0xFFFFFFFF,
-};
-
-enum qctee_os_scm_resp_type {
-	QCTEE_OS_SCM_RES_APP_ID			= 0xEE01,
-	QCTEE_OS_SCM_RES_QSEOS_LISTENER_ID	= 0xEE02,
-};
-
-struct qctee_os_scm_resp {
-	u64 status;
-	u64 resp_type;
-	u64 data;
-};
-
-static int __qctee_os_scm_call(const struct qcom_scm_desc *desc, struct qctee_os_scm_resp *res)
-{
-	struct qcom_scm_res scm_res = {};
-	int status;
-
-	status = qcom_scm_call(desc, &scm_res);
-
-	res->status = scm_res.result[0];
-	res->resp_type = scm_res.result[1];
-	res->data = scm_res.result[2];
-
-	if (status)
-		return status;
-
-	return 0;
-}
-
-static int qctee_os_scm_call(struct device *dev, const struct qcom_scm_desc *desc,
-			     struct qctee_os_scm_resp *res)
-{
-	int status;
-
-	status = __qctee_os_scm_call(desc, res);
-
-	dev_dbg(dev, "%s: owner=%x, svc=%x, cmd=%x, status=%lld, type=%llx, data=%llx",
-		__func__, desc->owner, desc->svc, desc->cmd, res->status,
-		res->resp_type, res->data);
-
-	if (status) {
-		dev_err(dev, "qcom_scm_call failed with error %d\n", status);
-		return status;
-	}
-
-	/*
-	 * TODO: Handle incomplete and blocked calls:
-	 *
-	 * Incomplete and blocked calls are not supported yet. Some devices
-	 * and/or commands require those, some don't. Let's warn about them
-	 * prominently in case someone attempts to try these commands with a
-	 * device/command combination that isn't supported yet.
-	 *
-	 * Note that supporting incomplete/reentrant calls will also require
-	 * proper locking here.
-	 */
-	WARN_ON(res->status == QCTEE_OS_RESULT_INCOMPLETE);
-	WARN_ON(res->status == QCTEE_OS_RESULT_BLOCKED_ON_LISTENER);
-
-	return 0;
-}
-
-static int qctee_app_get_id(struct device *dev, const char* app_name, u32 *app_id)
-{
-	u32 tzbuflen = QCTEE_MAX_APP_NAME_SIZE;
-	struct qcom_scm_desc desc = {};
-	struct qctee_os_scm_resp res = {};
-	dma_addr_t addr_tzbuf;
-	char *tzbuf;
-	int status;
-
-	tzbuf = kzalloc(tzbuflen, GFP_KERNEL);
-	if (!tzbuf)
-		return -ENOMEM;
-
-	strlcpy(tzbuf, app_name, tzbuflen);
-
-	addr_tzbuf = dma_map_single(dev, tzbuf, tzbuflen, DMA_BIDIRECTIONAL);
-	if (dma_mapping_error(dev, addr_tzbuf)) {
-		dev_err(dev, "failed to map dma address\n");
-		return -EFAULT;
-	}
-
-	desc.owner = QCTEE_TZ_OWNER_QSEE_OS;
-	desc.svc = QCTEE_TZ_SVC_APP_MGR;
-	desc.cmd = 0x03;
-	desc.arginfo = QCOM_SCM_ARGS(2, QCOM_SCM_RW, QCOM_SCM_VAL);
-	desc.args[0] = addr_tzbuf;
-	desc.args[1] = strlen(app_name);
-
-	status = qctee_os_scm_call(dev, &desc, &res);
-	dma_unmap_single(dev, addr_tzbuf, tzbuflen, DMA_BIDIRECTIONAL);
-	kfree(tzbuf);
-
-	if (status)
-		return status;
-
-	if (res.status != QCTEE_OS_RESULT_SUCCESS)
-		return -EINVAL;
-
-	*app_id = res.data;
-	return 0;
-}
-
-static int qctee_app_send(struct device *dev, u32 app_id, dma_addr_t req,
-			  u64 req_len, dma_addr_t rsp, u64 rsp_len)
-{
-	struct qctee_os_scm_resp res = {};
-	int status;
-
-	struct qcom_scm_desc desc = {
-		.owner = QCTEE_TZ_OWNER_TZ_APPS,
-		.svc = QCTEE_TZ_SVC_APP_ID_PLACEHOLDER,
-		.cmd = 0x01,
-		.arginfo = QCOM_SCM_ARGS(5, QCOM_SCM_VAL,
-					 QCOM_SCM_RW, QCOM_SCM_VAL,
-					 QCOM_SCM_RW, QCOM_SCM_VAL),
-		.args[0] = app_id,
-		.args[1] = req,
-		.args[2] = req_len,
-		.args[3] = rsp,
-		.args[4] = rsp_len,
-	};
-
-	status = qctee_os_scm_call(dev, &desc, &res);
-	if (status)
-		return status;
-
-	if (res.status != QCTEE_OS_RESULT_SUCCESS)
-		return -EIO;
-
-	return 0;
-}
-
 
 /* -- UEFI app interface. --------------------------------------------------- */
 
@@ -925,5 +733,5 @@ static void __exit qcom_uefivars_exit(void)
 module_exit(qcom_uefivars_exit);
 
 MODULE_AUTHOR("Maximilian Luz <luzmaximilian@gmail.com>");
-MODULE_DESCRIPTION("Test");
+MODULE_DESCRIPTION("Client driver for Qualcom TEE/TZ UEFI Secure App");
 MODULE_LICENSE("GPL");
