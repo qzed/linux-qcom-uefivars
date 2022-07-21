@@ -44,7 +44,7 @@ static unsigned long utf16_strlcpy(efi_char16_t *dst, const efi_char16_t *src, u
 
 #define QCTEE_UEFISEC_APP_NAME			"qcom.tz.uefisecapp"
 
-#define QCTEE_CMD_UEFI(x)			(0x8000 | x)
+#define QCTEE_CMD_UEFI(x)			(0x8000 | (x))
 #define QCTEE_CMD_UEFI_GET_VARIABLE		QCTEE_CMD_UEFI(0)
 #define QCTEE_CMD_UEFI_SET_VARIABLE		QCTEE_CMD_UEFI(1)
 #define QCTEE_CMD_UEFI_GET_NEXT_VARIABLE	QCTEE_CMD_UEFI(2)
