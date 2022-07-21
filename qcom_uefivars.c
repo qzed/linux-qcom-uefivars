@@ -89,34 +89,34 @@ static unsigned long utf16_strlcpy(efi_char16_t *dst, const efi_char16_t *src, u
 
 /* -- TzApp interface. ------------------------------------------------------ */
 
-#define MAX_APP_NAME_SIZE		64
+#define QCTEE_MAX_APP_NAME_SIZE			64
 
-#define TZ_OWNER_TZ_APPS		48
-#define TZ_OWNER_QSEE_OS		50
+#define QCTEE_TZ_OWNER_TZ_APPS			48
+#define QCTEE_TZ_OWNER_QSEE_OS			50
 
-#define TZ_SVC_APP_ID_PLACEHOLDER	0
-#define TZ_SVC_APP_MGR			1
-#define TZ_SVC_LISTENER			2
+#define QCTEE_TZ_SVC_APP_ID_PLACEHOLDER		0
+#define QCTEE_TZ_SVC_APP_MGR			1
+#define QCTEE_TZ_SVC_LISTENER			2
 
-enum qseecom_qseos_cmd_status {
-	QSEOS_RESULT_SUCCESS = 0,
-	QSEOS_RESULT_INCOMPLETE,
-	QSEOS_RESULT_BLOCKED_ON_LISTENER,
-	QSEOS_RESULT_FAILURE = 0xFFFFFFFF
+enum qctee_os_scm_result {
+	QCTEE_OS_RESULT_SUCCESS 		= 0,
+	QCTEE_OS_RESULT_INCOMPLETE		= 1,
+	QCTEE_OS_RESULT_BLOCKED_ON_LISTENER	= 2,
+	QCTEE_OS_RESULT_FAILURE			= 0xFFFFFFFF,
 };
 
-enum qseecom_command_scm_resp_type {
-	QSEOS_APP_ID = 0xEE01,
-	QSEOS_LISTENER_ID
+enum qctee_os_scm_resp_type {
+	QCTEE_OS_SCM_RES_APP_ID			= 0xEE01,
+	QCTEE_OS_SCM_RES_QSEOS_LISTENER_ID	= 0xEE02,
 };
 
-struct qseos_res {
+struct qctee_os_scm_resp {
 	u64 status;
 	u64 resp_type;
 	u64 data;
 };
 
-static int __qseos_syscall(const struct qcom_scm_desc *desc, struct qseos_res *res)
+static int __qctee_os_scm_call(const struct qcom_scm_desc *desc, struct qctee_os_scm_resp *res)
 {
 	struct qcom_scm_res scm_res = {};
 	int status;
@@ -133,11 +133,12 @@ static int __qseos_syscall(const struct qcom_scm_desc *desc, struct qseos_res *r
 	return 0;
 }
 
-static int qseos_syscall(struct device *dev, const struct qcom_scm_desc *desc, struct qseos_res *res)
+static int qctee_os_scm_call(struct device *dev, const struct qcom_scm_desc *desc,
+			     struct qctee_os_scm_resp *res)
 {
 	int status;
 
-	status = __qseos_syscall(desc, res);
+	status = __qctee_os_scm_call(desc, res);
 
 	dev_dbg(dev, "%s: owner=%x, svc=%x, cmd=%x, status=%lld, type=%llx, data=%llx",
 		__func__, desc->owner, desc->svc, desc->cmd, res->status,
@@ -155,21 +156,21 @@ static int qseos_syscall(struct device *dev, const struct qcom_scm_desc *desc, s
 	 * and/or commands require those, some don't. Let's warn about them
 	 * prominently in case someone attempts to try these commands with a
 	 * device/command combination that isn't supported yet.
-	 * 
+	 *
 	 * Note that supporting incomplete/reentrant calls will also require
 	 * proper locking here.
 	 */
-	WARN_ON(res->status == QSEOS_RESULT_INCOMPLETE);
-	WARN_ON(res->status == QSEOS_RESULT_BLOCKED_ON_LISTENER);
+	WARN_ON(res->status == QCTEE_OS_RESULT_INCOMPLETE);
+	WARN_ON(res->status == QCTEE_OS_RESULT_BLOCKED_ON_LISTENER);
 
 	return 0;
 }
 
-static int qseos_app_get_id(struct device *dev, const char* app_name, u32 *app_id)
+static int qctee_app_get_id(struct device *dev, const char* app_name, u32 *app_id)
 {
-	u32 tzbuflen = MAX_APP_NAME_SIZE;
+	u32 tzbuflen = QCTEE_MAX_APP_NAME_SIZE;
 	struct qcom_scm_desc desc = {};
-	struct qseos_res res = {};
+	struct qctee_os_scm_resp res = {};
 	dma_addr_t addr_tzbuf;
 	char *tzbuf;
 	int status;
@@ -186,36 +187,36 @@ static int qseos_app_get_id(struct device *dev, const char* app_name, u32 *app_i
 		return -EFAULT;
 	}
 
-	desc.owner = TZ_OWNER_QSEE_OS;
-	desc.svc = TZ_SVC_APP_MGR;
+	desc.owner = QCTEE_TZ_OWNER_QSEE_OS;
+	desc.svc = QCTEE_TZ_SVC_APP_MGR;
 	desc.cmd = 0x03;
 	desc.arginfo = QCOM_SCM_ARGS(2, QCOM_SCM_RW, QCOM_SCM_VAL);
 	desc.args[0] = addr_tzbuf;
 	desc.args[1] = strlen(app_name);
 
-	status = qseos_syscall(dev, &desc, &res);
+	status = qctee_os_scm_call(dev, &desc, &res);
 	dma_unmap_single(dev, addr_tzbuf, tzbuflen, DMA_BIDIRECTIONAL);
 	kfree(tzbuf);
 
 	if (status)
 		return status;
 
-	if (res.status != QSEOS_RESULT_SUCCESS)
+	if (res.status != QCTEE_OS_RESULT_SUCCESS)
 		return -EINVAL;
 
 	*app_id = res.data;
 	return 0;
 }
 
-static int qseos_app_send(struct device *dev, u32 app_id, dma_addr_t req,
+static int qctee_app_send(struct device *dev, u32 app_id, dma_addr_t req,
 			  u64 req_len, dma_addr_t rsp, u64 rsp_len)
 {
-	struct qseos_res res = {};
+	struct qctee_os_scm_resp res = {};
 	int status;
 
 	struct qcom_scm_desc desc = {
-		.owner = TZ_OWNER_TZ_APPS,
-		.svc = TZ_SVC_APP_ID_PLACEHOLDER,
+		.owner = QCTEE_TZ_OWNER_TZ_APPS,
+		.svc = QCTEE_TZ_SVC_APP_ID_PLACEHOLDER,
 		.cmd = 0x01,
 		.arginfo = QCOM_SCM_ARGS(5, QCOM_SCM_VAL,
 					 QCOM_SCM_RW, QCOM_SCM_VAL,
@@ -227,11 +228,11 @@ static int qseos_app_send(struct device *dev, u32 app_id, dma_addr_t req,
 		.args[4] = rsp_len,
 	};
 
-	status = qseos_syscall(dev, &desc, &res);
+	status = qctee_os_scm_call(dev, &desc, &res);
 	if (status)
 		return status;
 
-	if (res.status != QSEOS_RESULT_SUCCESS)
+	if (res.status != QCTEE_OS_RESULT_SUCCESS)
 		return -EIO;
 
 	return 0;
@@ -397,7 +398,7 @@ static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const efi_
 
 	/* Perform SCM call. */
 	dma_wmb();
-	status = qseos_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
+	status = qctee_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
 				dma_rsp.phys, dma_rsp.size);
 	dma_rmb();
 
@@ -512,7 +513,7 @@ static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_
 	dma_rsp.size = sizeof(*rsp_data);
 
 	dma_wmb();
-	status = qseos_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
+	status = qctee_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
 				dma_rsp.phys, dma_rsp.size);
 	dma_rmb();
 
@@ -589,7 +590,7 @@ static efi_status_t qcuefi_get_next_variable(struct qcom_uefi_app *qcuefi, unsig
 
 	/* Perform SCM call. */
 	dma_wmb();
-	status = qseos_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
+	status = qctee_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
 				dma_rsp.phys, dma_rsp.size);
 	dma_rmb();
 
@@ -677,7 +678,7 @@ static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32
 	dma_rsp.size = sizeof(*rsp_data);
 
 	dma_wmb();
-	status = qseos_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
+	status = qctee_app_send(qcuefi->dev, qcuefi->app_id, dma_req.phys, dma_req.size,
 				dma_rsp.phys, dma_rsp.size);
 	dma_rmb();
 
@@ -810,7 +811,7 @@ static int qcom_uefivars_probe(struct platform_device *pdev)
 	qcuefi->dev = &pdev->dev;
 
 	/* Get application id for uefisecapp. */
-	status = qseos_app_get_id(&pdev->dev, QCOM_UEFISEC_APP_NAME, &qcuefi->app_id);
+	status = qctee_app_get_id(&pdev->dev, QCOM_UEFISEC_APP_NAME, &qcuefi->app_id);
 	if (status) {
 		dev_err(&pdev->dev, "failed to query app ID: %d\n", status);
 		return status;
