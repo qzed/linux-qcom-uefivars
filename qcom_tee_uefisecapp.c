@@ -39,6 +39,12 @@ static unsigned long utf16_strlcpy(efi_char16_t *dst, const efi_char16_t *src, u
 	return actual;
 }
 
+static unsigned long utf16_copy_to_buf(efi_char16_t *dst, const efi_char16_t *src,
+				       unsigned long bytes)
+{
+	return utf16_strlcpy(dst, src, bytes / sizeof(src[0]));
+}
+
 
 /* -- Qualcomm "uefisecapp" interface definitions. -------------------------- */
 
@@ -192,7 +198,7 @@ static efi_status_t qctee_uefi_get_variable(struct qcuefi_client *qcuefi, const 
 	dma_req.size = req_data->length;
 
 	/* Copy request parameters. */
-	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, name_size / sizeof(name[0]));
+	utf16_copy_to_buf(dma_req.virt + req_data->name_offset, name, name_size);
 	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
 
 	/* Align response struct. */
@@ -300,7 +306,7 @@ static efi_status_t qctee_uefi_set_variable(struct qcuefi_client *qcuefi, const 
 	req_data->length = req_data->data_offset + data_size;
 
 	/* Copy request parameters. */
-	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, req_data->name_size);
+	utf16_copy_to_buf(dma_req.virt + req_data->name_offset, name, req_data->name_size);
 	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
 
 	if (data_size)
@@ -381,7 +387,7 @@ static efi_status_t qctee_uefi_get_next_variable(struct qcuefi_client *qcuefi,
 
 	/* Copy request parameters. */
 	memcpy(dma_req.virt + req_data->guid_offset, guid, req_data->guid_size);
-	utf16_strlcpy(dma_req.virt + req_data->name_offset, name, *name_size / sizeof(name[0]));
+	utf16_copy_to_buf(dma_req.virt + req_data->name_offset, name, *name_size);
 
 	/* Align response struct. */
 	qctee_dma_aligned(&qcuefi->dma, &dma_rsp, req_data->length);
@@ -427,8 +433,7 @@ static efi_status_t qctee_uefi_get_next_variable(struct qcuefi_client *qcuefi,
 
 	/* Copy response fields. */
 	memcpy(guid, dma_rsp.virt + rsp_data->guid_offset, rsp_data->guid_size);
-	utf16_strlcpy(name, dma_rsp.virt + rsp_data->name_offset,
-		      rsp_data->name_size / sizeof(name[0]));
+	utf16_copy_to_buf(name, dma_rsp.virt + rsp_data->name_offset, rsp_data->name_size);
 	*name_size = rsp_data->name_size;
 
 	return 0;
