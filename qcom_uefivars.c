@@ -810,8 +810,10 @@ static int qcom_uefivars_probe(struct platform_device *pdev)
 
 	/* Get application id for uefisecapp. */
 	status = qseos_app_get_id(&pdev->dev, QCOM_UEFISEC_APP_NAME, &qcuefi->app_id);
-	if (status)
+	if (status) {
+		dev_err(&pdev->dev, "failed to query app ID: %d\n", status);
 		return status;
+	}
 
 	/* Set up DMA. One page should be plenty to start with. */
 	if (dma_set_mask(&pdev->dev, DMA_BIT_MASK(64))) {
