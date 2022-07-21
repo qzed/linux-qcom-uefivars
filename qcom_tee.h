@@ -29,6 +29,8 @@ struct qctee_dma {
 static inline int qctee_dma_alloc(struct device *dev, struct qctee_dma *dma,
 				  unsigned long size, gfp_t gfp)
 {
+	size = PAGE_ALIGN(size);
+
 	dma->virt = dma_alloc_coherent(dev, size, &dma->phys, GFP_KERNEL);
 	if (!dma->virt)
 		return -ENOMEM;
@@ -45,7 +47,7 @@ static inline void qctee_dma_free(struct device *dev, struct qctee_dma *dma)
 static inline int qctee_dma_realloc(struct device *dev, struct qctee_dma *dma,
 				    unsigned long size, gfp_t gfp)
 {
-	if (size <= dma->size)
+	if (PAGE_ALIGN(size) <= dma->size)
 		return 0;
 
 	qctee_dma_free(dev, dma);

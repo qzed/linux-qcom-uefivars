@@ -174,7 +174,6 @@ static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const efi_
 	size += sizeof(*rsp_data) + buffer_size;                  /* Outputs.           */
 	size += __alignof__(*req_data) + __alignof__(*guid);      /* Input alignments.  */
 	size += __alignof__(*rsp_data);                           /* Output alignments. */
-	size = PAGE_ALIGN(size);
 
 	/* Make sure we have enough DMA memory. */
 	status = qctee_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
@@ -280,7 +279,6 @@ static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_
 	size += sizeof(*rsp_data);                                          /* Outputs.           */
 	size += __alignof__(*req_data) + __alignof__(*guid);                /* Input alignments.  */
 	size += __alignof__(*rsp_data);                                     /* Output alignments. */
-	size = PAGE_ALIGN(size);
 
 	/* Make sure we have enough DMA memory. */
 	status = qctee_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
@@ -361,7 +359,6 @@ static efi_status_t qcuefi_get_next_variable(struct qcom_uefi_app *qcuefi, unsig
 	size += sizeof(*rsp_data) + sizeof(*guid) + *name_size;   /* Outputs.           */
 	size += __alignof__(*req_data) + __alignof__(*guid);      /* Input alignments.  */
 	size += __alignof__(*rsp_data);                           /* Output alignments. */
-	size = PAGE_ALIGN(size);
 
 	/* Make sure we have enough DMA memory. */
 	status = qctee_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
@@ -452,7 +449,6 @@ static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32
 	/* Compute required size. */
 	size = sizeof(*req_data) + sizeof(*rsp_data);
 	size += __alignof__(*req_data) + __alignof__(*rsp_data);
-	size = PAGE_ALIGN(size);
 
 	/* Make sure we have enough DMA memory. */
 	status = qctee_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
