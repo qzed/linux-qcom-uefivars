@@ -166,10 +166,10 @@ static efi_status_t qctee_uefi_get_variable(struct qcuefi_client *qcuefi, const 
 		return EFI_INVALID_PARAMETER;
 
 	/* Compute required size. */
-	size = sizeof(*req_data) + sizeof(*guid) + name_size;  /* Inputs. */
-	size += sizeof(*rsp_data) + buffer_size;               /* Outputs. */
-	size += __alignof__(*req_data) + __alignof__(*guid);   /* Input alignments. */
-	size += __alignof__(*rsp_data);                        /* Output alignments. */
+	size = sizeof(*req_data) + sizeof(*guid) + name_size  /* Inputs. */
+	       + sizeof(*rsp_data) + buffer_size              /* Outputs. */
+	       + __alignof__(*req_data) + __alignof__(*guid)  /* Input alignments. */
+	       + __alignof__(*rsp_data);                      /* Output alignments. */
 
 	/* Make sure we have enough DMA memory. */
 	status = qctee_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
@@ -274,10 +274,10 @@ static efi_status_t qctee_uefi_set_variable(struct qcuefi_client *qcuefi, const 
 		return EFI_INVALID_PARAMETER;
 
 	/* Compute required size. */
-	size = sizeof(*req_data) + name_size + sizeof(*guid) + data_size;  /* Inputs. */
-	size += sizeof(*rsp_data);                                         /* Outputs. */
-	size += __alignof__(*req_data) + __alignof__(*guid);               /* Input alignments. */
-	size += __alignof__(*rsp_data);                                    /* Output alignments. */
+	size = sizeof(*req_data) + name_size + sizeof(*guid) + data_size  /* Inputs. */
+	       + sizeof(*rsp_data)                                        /* Outputs. */
+	       + __alignof__(*req_data) + __alignof__(*guid)              /* Input alignments. */
+	       + __alignof__(*rsp_data);                                  /* Output alignments. */
 
 	/* Make sure we have enough DMA memory. */
 	status = qctee_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
@@ -355,10 +355,10 @@ static efi_status_t qctee_uefi_get_next_variable(struct qcuefi_client *qcuefi,
 		return EFI_INVALID_PARAMETER;
 
 	/* Compute required size. */
-	size = sizeof(*req_data) + sizeof(*guid) + *name_size;   /* Inputs. */
-	size += sizeof(*rsp_data) + sizeof(*guid) + *name_size;  /* Outputs. */
-	size += __alignof__(*req_data) + __alignof__(*guid);     /* Input alignments. */
-	size += __alignof__(*rsp_data);                          /* Output alignments. */
+	size = sizeof(*req_data) + sizeof(*guid) + *name_size    /* Inputs. */
+	       + sizeof(*rsp_data) + sizeof(*guid) + *name_size  /* Outputs. */
+	       + __alignof__(*req_data) + __alignof__(*guid)     /* Input alignments. */
+	       + __alignof__(*rsp_data);                         /* Output alignments. */
 
 	/* Make sure we have enough DMA memory. */
 	status = qctee_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
@@ -447,8 +447,8 @@ static efi_status_t qctee_uefi_query_variable_info(struct qcuefi_client *qcuefi,
 	int status;
 
 	/* Compute required size. */
-	size = sizeof(*req_data) + sizeof(*rsp_data);
-	size += __alignof__(*req_data) + __alignof__(*rsp_data);
+	size = sizeof(*req_data) + sizeof(*rsp_data)
+	       + __alignof__(*req_data) + __alignof__(*rsp_data);
 
 	/* Make sure we have enough DMA memory. */
 	status = qctee_dma_realloc(qcuefi->dev, &qcuefi->dma, size, GFP_KERNEL);
