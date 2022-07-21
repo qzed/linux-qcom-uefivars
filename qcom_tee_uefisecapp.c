@@ -4,18 +4,11 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
-#include <linux/printk.h>
 #include <linux/qcom_scm.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 
-
 #include "qcom_tee.h"
-
-// TODO:
-// - rename stuff to be more consistent
-// - split-up interfaces for tz-os and uefisecapp into separate files
-// - move into kernel
 
 
 /* -- UTF-16 helpers. ------------------------------------------------------- */
