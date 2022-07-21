@@ -148,9 +148,9 @@ static efi_status_t qctee_uefi_status_to_efi(u32 status)
 	return category << (BITS_PER_LONG - 32) | code;
 }
 
-static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const efi_char16_t *name,
-					const efi_guid_t *guid, u32 *attributes,
-					unsigned long *data_size, void *data)
+static efi_status_t qctee_uefi_get_variable(struct qcom_uefi_app *qcuefi, const efi_char16_t *name,
+					    const efi_guid_t *guid, u32 *attributes,
+					    unsigned long *data_size, void *data)
 {
 	struct qctee_req_uefi_get_variable *req_data;
 	struct qctee_rsp_uefi_get_variable *rsp_data;
@@ -255,9 +255,9 @@ static efi_status_t qcuefi_get_variable(struct qcom_uefi_app *qcuefi, const efi_
 	return EFI_SUCCESS;
 }
 
-static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_char16_t *name,
-					const efi_guid_t *guid, u32 attributes,
-					unsigned long data_size, const void *data)
+static efi_status_t qctee_uefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_char16_t *name,
+					    const efi_guid_t *guid, u32 attributes,
+					    unsigned long data_size, const void *data)
 {
 	struct qctee_req_uefi_set_variable *req_data;
 	struct qctee_rsp_uefi_set_variable *rsp_data;
@@ -336,8 +336,9 @@ static efi_status_t qcuefi_set_variable(struct qcom_uefi_app *qcuefi, const efi_
 	return EFI_SUCCESS;
 }
 
-static efi_status_t qcuefi_get_next_variable(struct qcom_uefi_app *qcuefi, unsigned long *name_size,
-					     efi_char16_t *name, efi_guid_t *guid)
+static efi_status_t qctee_uefi_get_next_variable(struct qcom_uefi_app *qcuefi,
+						 unsigned long *name_size, efi_char16_t *name,
+						 efi_guid_t *guid)
 {
 	struct qctee_req_uefi_get_next_variable *req_data;
 	struct qctee_rsp_uefi_get_next_variable *rsp_data;
@@ -436,9 +437,9 @@ static efi_status_t qcuefi_get_next_variable(struct qcom_uefi_app *qcuefi, unsig
 }
 
 __maybe_unused	// TODO: use this somehow...?
-static efi_status_t qcuefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32 attributes,
-					       u64 *storage_space, u64 *remaining_space,
-					       u64 *max_variable_size)
+static efi_status_t qctee_uefi_query_variable_info(struct qcom_uefi_app *qcuefi, u32 attributes,
+						   u64 *storage_space, u64 *remaining_space,
+						   u64 *max_variable_size)
 {
 	struct qctee_req_uefi_query_variable_info *req_data;
 	struct qctee_rsp_uefi_query_variable_info *rsp_data;
@@ -534,8 +535,8 @@ static void qcuefi_release(void)
 	mutex_unlock(&__qcuefi_lock);
 }
 
-static efi_status_t qcv_get_variable(efi_char16_t *name, efi_guid_t *vendor, u32 *attr,
-				     unsigned long *data_size, void *data)
+static efi_status_t qcuefi_get_variable(efi_char16_t *name, efi_guid_t *vendor, u32 *attr,
+					unsigned long *data_size, void *data)
 {
 	struct qcom_uefi_app *qcuefi;
 	efi_status_t status;
@@ -544,14 +545,14 @@ static efi_status_t qcv_get_variable(efi_char16_t *name, efi_guid_t *vendor, u32
 	if (!qcuefi)
 		return EFI_NOT_READY;
 
-	status = qcuefi_get_variable(qcuefi, name, vendor, attr, data_size, data);
+	status = qctee_uefi_get_variable(qcuefi, name, vendor, attr, data_size, data);
 
 	qcuefi_release();
 	return status;
 }
 
-static efi_status_t qcv_set_variable(efi_char16_t *name, efi_guid_t *vendor,
-				     u32 attr, unsigned long data_size, void *data)
+static efi_status_t qcuefi_set_variable(efi_char16_t *name, efi_guid_t *vendor,
+					u32 attr, unsigned long data_size, void *data)
 {
 	struct qcom_uefi_app *qcuefi;
 	efi_status_t status;
@@ -560,14 +561,14 @@ static efi_status_t qcv_set_variable(efi_char16_t *name, efi_guid_t *vendor,
 	if (!qcuefi)
 		return EFI_NOT_READY;
 
-	status = qcuefi_set_variable(qcuefi, name, vendor, attr, data_size, data);
+	status = qctee_uefi_set_variable(qcuefi, name, vendor, attr, data_size, data);
 
 	qcuefi_release();
 	return status;
 }
 
-static efi_status_t qcv_get_next_variable(unsigned long *name_size, efi_char16_t *name,
-					  efi_guid_t *vendor)
+static efi_status_t qcuefi_get_next_variable(unsigned long *name_size, efi_char16_t *name,
+					     efi_guid_t *vendor)
 {
 	struct qcom_uefi_app *qcuefi;
 	efi_status_t status;
@@ -576,16 +577,16 @@ static efi_status_t qcv_get_next_variable(unsigned long *name_size, efi_char16_t
 	if (!qcuefi)
 		return EFI_NOT_READY;
 
-	status = qcuefi_get_next_variable(qcuefi, name_size, name, vendor);
+	status = qctee_uefi_get_next_variable(qcuefi, name_size, name, vendor);
 
 	qcuefi_release();
 	return status;
 }
 
-static const struct efivar_operations efivar_ops = {
-	.get_variable = qcv_get_variable,
-	.set_variable = qcv_set_variable,
-	.get_next_variable = qcv_get_next_variable,
+static const struct efivar_operations qcom_efivar_ops = {
+	.get_variable = qcuefi_get_variable,
+	.set_variable = qcuefi_set_variable,
+	.get_next_variable = qcuefi_get_next_variable,
 };
 
 
@@ -634,7 +635,7 @@ static int qcom_uefivars_probe(struct platform_device *pdev)
 		goto err_ref;
 
 	/* Register efivars. */
-	status = efivars_register(&qcuefi->efivars, &efivar_ops, qcuefi->kobj);
+	status = efivars_register(&qcuefi->efivars, &qcom_efivar_ops, qcuefi->kobj);
 	if (status)
 		goto err_register;
 
