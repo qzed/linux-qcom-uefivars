@@ -6,6 +6,7 @@
  * Copyright (C) 2022 Maximilian Luz <luzmaximilian@gmail.com>
  */
 
+#include <asm/barrier.h>
 #include <linux/device.h>
 #include <linux/kernel.h>
 #include <linux/module.h>

@@ -12,6 +12,7 @@
 #include <linux/device.h>
 #include <linux/dma-mapping.h>
 #include <linux/kernel.h>
+#include <linux/mm.h>
 #include <linux/qcom_scm.h>
 #include <linux/types.h>
 
