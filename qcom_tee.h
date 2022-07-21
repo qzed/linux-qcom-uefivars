@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
-/* 
+/*
  * Interface driver for the Qualcomm Trusted Execution Environment / TrustZone
  * OS. Manages communication via Secure Channel Manager (SCM) calls.
- * 
+ *
  * Copyright (C) 2022 Maximilian Luz <luzmaximilian@gmail.com>
  */
 
