@@ -11,6 +11,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/qcom_scm.h>
+#include <linux/string.h>
 
 #include "qcom_tee.h"
 
